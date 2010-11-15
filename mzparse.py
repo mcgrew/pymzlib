@@ -25,24 +25,19 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version 0.1-beta-2010.07.23
+	Version alpha 2010.11.15
 """
 import sys
 import os
-import numpy as numerical
 import libxml2 as xml
-#import struct
+import struct
 from base64 import b64decode
 import types
 
 class parser( object ):
 
-	rt = None
-	count = None
-	mass = None
-	intensity = None
-	polarity = None
 	sourceFile = None
+	data = { "metadata" : {}, "scans" : [] }
 
 
 	def __init__( self, options=None ):
@@ -109,7 +104,7 @@ class parser( object ):
 		i = 0
 		while( i < len( lines ) and lines[ i ][ :10 ] != "file name," ):
 			i+= 1
-		this.sourceFile = lines[ i ].split( ',' )[ 1 ]
+		self.sourceFile = lines[ i ].split( ',' )[ 1 ]
 		while ( i < len( lines ) and lines[ i ][ :9 ] != "[spectra]" ):
 			i+=1
 		i+=1
@@ -118,38 +113,25 @@ class parser( object ):
 			sys.stderr.write( "Unable to parse the reference file '%s'\n" % filename ) 
 			return False
 	
-		rt = [] # retention time
-		count = [] 
-		mass = []
-		intensity = []
-		polarity = []
-		# form the data into arrays.
+		msLevel = 1
 		for line in lines[ i: ]:
 			values = line.split( ',' )
 			if values[ 4 ] == '-':
-				polarity[ i ] = -1
+				polarity = -1
 			else:
-				polarity[ i ] = 1
-			rtValue = float( values[ 0 ])
-			countValue = float( values[ 6 ])
-			intensityValues = [  int( x )  for x in values[ 8:-1:2 ] ]
+				polarity = 1
+			rt = float( values[ 0 ])
+			count = float( values[ 6 ])
+			intensityValues = [  float( x )  for x in values[ 8:-1:2 ] ]
 			massValues = [ float( y ) for y in values[ 7:-1:2 ] ]
-			rt.append( rtValue )
-			count.append( countValue )
-			mass.append( massValues )
-			intensity.append( intensityValues )
-		# make the length of each row the same in the 2-d arrays (fill with zeros)
-		maxLen = max([ len(x) for x in intensity ])
-		for i in xrange( len( intensity )):
-			mass[i].extend( [0] * ( maxLen - len( mass[ i ] )))
-			intensity[i].extend( [0] * ( maxLen - len( intensity[ i ] )))
 
-		#convert the arrays to numpy arrays
-		self.rt = numerical.array( rt )
-		self.polarity = numerical.array( polarity )
-		self.count = numerical.array( count )
-		self.mass = numerical.array( mass )
-		self.intensity = numerical.array( intensity )
+			self.data[ "scans" ].append({ 
+				"retentionTime" : rt,
+				"polarity" : polarity, 
+				"msLevel" : msLevel, 
+				"parentScan" : None,
+				"data" : dict( zip( massValues, intensityValues )) 
+			})
 
 		return True
 
@@ -165,26 +147,24 @@ class parser( object ):
 		dataFile = xml.parseFile( filename )
 		self.sourceFile = dataFile.xpathEval( '//sourceFile/nameOfFile' )[ 0 ].content
 		scans = dataFile.xpathEval( '//spectrum' )
-		scanSize = max(( int( i.content ) for i in dataFile.xpathEval( '//data/@length' )))
-		self.rt = numerical.ndarray(( len( scans ), ))
-		self.polarity = numerical.ndarray(( len( scans ), ))
-		self.count = numerical.ndarray(( len( scans ), ), numerical.int32 )
-		self.mass = numerical.zeros(( len( scans ), scanSize ))
-		self.intensity = numerical.zeros(( len( scans ), scanSize ))
-		for i in xrange( len( scans )):
-			scan = scans[ i ]
+		for scan in scans:
+			msLevel = 1
 			polarity = scan.xpathEval( '*//cvParam[@name="Polarity"]/@value' )
 			if ( polarity == "Negative" ):
-				self.polarity[ i ] = -1
+				polarity = -1
 			else:
-				self.polarity[ i ] = 1
-			self.rt[ i ] = float( scan.xpathEval( 
-				'*//cvParam[@name="TimeInMinutes"]/@value' )[0].content )
-			data = self._unpackMzData( scan.xpathEval( 'mzArrayBinary/data' )[ 0 ] )
-			self.mass[ i ][ 0:len( data ) ] = data 
-			data = self._unpackMzData( scan.xpathEval( 'intenArrayBinary/data' )[ 0 ] )
-			self.intensity[ i ][ 0:len( data ) ] = data
-			self.count[ i ] = len( data )
+				polarity = 1
+			rt = float( scan.xpathEval( '*//cvParam[@name="TimeInMinutes"]/@value' )[0].content )
+			massValues = self._unpackMzData( scan.xpathEval( 'mzArrayBinary/data' )[ 0 ] )
+			intensityValues = self._unpackMzData( scan.xpathEval( 'intenArrayBinary/data' )[ 0 ] )
+
+			self.data[ "scans" ].append({ 
+				"retentionTime" : rt,
+				"polarity" : polarity, 
+				"msLevel" : msLevel, 
+				"parentScan" : None,
+				"data" : dict( zip( massValues, intensityValues )) 
+			})
 
 		return True
 
@@ -207,20 +187,12 @@ class parser( object ):
 				precision = int( prop.content )
 			prop = prop.next
 
-#		if precision == 64: type = 'd'
-#		else: type='f'
-#		if littleEndian: byteOrder = '<'
-#		else: byteOrder = '>'
+		if precision == 64: type = 'd'
+		else: type='f'
+		if endian == 'little': byteOrder = '<'
+		else: byteOrder = '>'
 
-#		return struct.unpack( byteOrder + ( type * scanSize ), b64decode( dataNode.content ))
-
-		if precision == 64: type = numerical.float64
-		else: type = numerical.float32
-		if not endian == sys.byteorder:
-			if endian == 'little': type = numerical.dtype( type ).newbyteorder( '<' )
-			else: type = numerical.dtype( type ).newbyteorder( '>' )
-
-		return numerical.frombuffer( b64decode( dataNode.content ), type, scanSize )
+		return struct.unpack( byteOrder + ( type * scanSize ), b64decode( dataNode.content ))
 
 	def readMzXml( self, filename ):
 		"""
@@ -235,19 +207,17 @@ class parser( object ):
 		dataContext = dataFile.xpathNewContext( )
 		dataContext.xpathRegisterNs( 'def', dataFile.getRootElement( ).ns( ).getContent( ))
 		scans = dataContext.xpathEval( '//def:scan[@msLevel="1"]' )
-		scanSize = max(( int( i.content) for i in dataContext.xpathEval( '//def:scan[@msLevel="1"]/@peaksCount' )))
-		self.rt = numerical.zeros(( len( scans), ))
-		self.count = numerical.ndarray(( len( scans ), ), numerical.int32 )
-		self.mass = numerical.zeros(( len( scans ), scanSize ))
-		self.intensity = numerical.zeros(( len( scans ), scanSize ))
-		for i in xrange( len( scans )):
-			scan = scans[ i ]
+		polarity = None # <-- fix this
+		for scan in scans:
+			msLevel = 1
 			prop = scan.properties
 			while prop:
 				if prop.name == 'peaksCount':
-					self.count[ i ] = int( prop.content )
+					scanSize = int( prop.content )
 				if prop.name == 'retentionTime':
-					self.rt[ i ] = float( prop.content[ 2:-1 ] ) / 60
+					rt = float( prop.content[ 2:-1 ] ) / 60
+				if prop.name == 'msLevel':
+					msLevel = int( prop.content )
 				prop = prop.next
 
 			peaks = scan.children
@@ -260,62 +230,64 @@ class parser( object ):
 				precision = precision.next
 			precision = int( precision.content )
 
-#			if precision == 64: type = 'd'
-#			else: type='f'
-#			byteOrder = '>'
+			if precision == 64: type = 'd'
+			else: type='f'
+			byteOrder = '>'
 
-			if precision == 64: type = numerical.float64 
-			else: type = numerical.float32
-			if sys.byteorder == 'little':
-				type = numerical.dtype( type ).newbyteorder( '>' )
+			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( peaks.content ))
+			massValues = data[ 0::2 ]
+			intensityValues = data[ 1::2 ] 
 
-			data = numerical.frombuffer( b64decode( peaks.content ), type, self.count[ i ] * 2 )
-#			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( peaks.content ))
-			self.mass[ i ][ 0:len( data )>>1 ] = data[ 0::2 ]
-			self.intensity[ i ][ 0:len( data )>>1 ] = data[ 1::2 ] 
+			self.data[ "scans" ].append({ 
+				"retentionTime" : rt,
+				"polarity" : polarity, 
+				"msLevel" : msLevel, 
+				"parentScan" : None,
+				"data" : dict( zip( massValues, intensityValues )) 
+			})
 
 		return True
 
-	def filterByTime( self, minTime=0, maxTime=0 ):
-		"""
-		Filters the data by retention time, removing any unwanted data
-
-		:Parameters:
-			minTime : float
-				The minimum retention time to keep in this Object.
-			maxTime : float
-				The maximum retention time to keep in this Object.
-		"""
-		if ( minTime or maxTime ):
-			minIndex, maxIndex = ( 0, len( self.rt ) + 1 )			
-			for i in xrange( len( self.rt )): 
-				if ( self.rt[ i ] < minTime ):
-					minIndex = i
-				if ( maxTime and self.rt[ i ] > maxTime ):
-					maxIndex = i
-					break
-			minIndex += 1
-			self.rt = self.rt[ minIndex:maxIndex ]
-			self.mass =  self.mass[ minIndex:maxIndex ]
-			self.intensity = self.intensity[ minIndex:maxIndex ]
-			self.firstIndex = i
-
-	def filterByMass( minMass=0, maxMass=0 ):
-		"""
-		Filters the data to keep only a certain mass range
-		The data size is not changed, data which is not retained is zeroed.
-
-		:Parameters:
-			minMass : float
-				The minimum mass to retain.
-			maxMass : float
-				The maximum mass to retain.
-		"""
-		for i in xrange( len( self.rt )): 
-			for j in xrange( len( self.mass[ i ])):
-				if ( self.mass[ i ][ j ] < minMass or self.mass[ i ][ j ] > maxMass ):
-					self.mass[ i ][ j ] = 0
-					self.intensity[ i ][ j ] = 0
-
-		return True 
+#	def filterByTime( self, minTime=0, maxTime=0 ):
+#		"""
+#		Filters the data by retention time, removing any unwanted data
+#
+#		:Parameters:
+#			minTime : float
+#				The minimum retention time to keep in this Object.
+#			maxTime : float
+#				The maximum retention time to keep in this Object.
+#		"""
+#		if ( minTime or maxTime ):
+#			minIndex, maxIndex = ( 0, len( self.rt ) + 1 )			
+#			for i in xrange( len( self.rt )): 
+#				if ( self.rt[ i ] < minTime ):
+#					minIndex = i
+#				if ( maxTime and self.rt[ i ] > maxTime ):
+#					maxIndex = i
+#					break
+#			minIndex += 1
+#			self.rt = self.rt[ minIndex:maxIndex ]
+#			self.mass =  self.mass[ minIndex:maxIndex ]
+#			self.intensity = self.intensity[ minIndex:maxIndex ]
+#			self.firstIndex = i
+#
+#	def filterByMass( minMass=0, maxMass=0 ):
+#		"""
+#		Filters the data to keep only a certain mass range
+#		The data size is not changed, data which is not retained is zeroed.
+#
+#		:Parameters:
+#			minMass : float
+#				The minimum mass to retain.
+#			maxMass : float
+#				The maximum mass to retain.
+#		"""
+#		for i in xrange( len( self.rt )): 
+#			for j in xrange( len( self.mass[ i ])):
+#				if ( self.mass[ i ][ j ] < minMass or self.mass[ i ][ j ] > maxMass ):
+#					self.mass[ i ][ j ] = 0
+#					self.intensity[ i ][ j ] = 0
+#
+#		return True 
 
