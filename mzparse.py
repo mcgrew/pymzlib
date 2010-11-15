@@ -29,20 +29,13 @@ License: MIT license.
 """
 import sys
 import os
-#import tempfile
-#from hashlib import sha1
-#import cPickle
 import numpy as numerical
 import libxml2 as xml
-import struct
+#import struct
 from base64 import b64decode
 import types
-try:
-	import filters
-except ImportError,e:
-	filters = None
 
-class MzData( object ):
+class parser( object ):
 
 	rt = None
 	count = None
@@ -65,7 +58,7 @@ class MzData( object ):
 	def read( self, filename ):
 		"""
 		Load a file into this reference. This method will automatically detect the
-		file type based on the file extrension.
+		file type based on the file extension.
 
 		:Parameters:
 			filename : str
@@ -74,25 +67,6 @@ class MzData( object ):
 
 		if not os.path.exists( filename ):
 			raise IOError( "The file %s does not exist or is not readable" % filename )
-
-		# look for a cached version of this file
-#		tmpDir = tempfile.gettempdir( ) + os.path.sep + "plotXmass"
-#		cacheFileName = tmpDir + os.path.sep + sha1( "%s %d" % ( filename, os.path.getsize( filename ))).hexdigest( )
-#		if not os.path.exists( tmpDir ):
-#			os.mkdir( tmpDir )
-#		else:
-#			if os.path.exists( cacheFileName ):
-#				cacheFile = open( cacheFileName, 'rb' )
-#				try:
-#					self.rt = cPickle.load( cacheFile ) 
-#					self.mass = cPickle.load( cacheFile ) 
-#					self.intensity = cPickle.load( cacheFile )
-#					cacheFile.close( )
-#				except ( cPickle.UnpicklingError ):
-#					# bad file
-#					cacheFile.close( )
-#					os.remove( cacheFileName )
-
 
 		try:
 			fileExt = filename[ filename.rindex( '.' )+1: ]
@@ -114,20 +88,6 @@ class MzData( object ):
 		if not returnvalue:
 			return False
 		return True
-
-		#cache this file
-#		if not ( os.path.exists( cacheFileName )):
-#			cacheFile = open( cacheFileName, 'wb' )
-#			try:
-#				cPickle.dump( self.rt, cacheFile, cPickle.HIGHEST_PROTOCOL )
-#				cPickle.dump( self.mass, cacheFile, cPickle.HIGHEST_PROTOCOL )
-#				cPickle.dump( self.intensity, cacheFile, cPickle.HIGHEST_PROTOCOL )
-#				cacheFile.close( )
-#			except IOError,e:
-#				sys.stderr.write( "Unable to cache file '%s'\n" % filename )
-#				print e
-#				cacheFile.close( )
-#				os.remove( cacheFileName )
 
 	def readCsv( self, filename ):
 		"""
@@ -192,7 +152,6 @@ class MzData( object ):
 		self.intensity = numerical.array( intensity )
 
 		return True
-	readFile = read #readFile is an alias for read
 
 	def readMzData( self, filename ):
 		"""
