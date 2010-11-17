@@ -25,22 +25,20 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version alpha 2010.11.15
+	Version alpha 2010.11.17
+
 """
 import sys
 import os
-import libxml2 as xml
 from xml.dom.minidom import parse
 import struct
 from base64 import b64decode
 import types
 import re
 
-class parser( object ):
+class Parser( object ):
 
-	sourceFile = None
 	data = { "metadata" : {}, "scans" : [] }
-
 
 	def __init__( self, options=None ):
 		"""
@@ -49,6 +47,7 @@ class parser( object ):
 		:Parameters:
 			options : None
 				This argument is deprecated and not used. Only here for compatibility.
+
 		"""
 		object.__init__( self )
 
@@ -60,6 +59,7 @@ class parser( object ):
 		:Parameters:
 			filename : str
 				The name of the file to load.
+
 		"""
 
 		if not os.path.exists( filename ):
@@ -94,6 +94,7 @@ class parser( object ):
 		:Parameters:
 			filename : str
 				The name of the file to load.
+
 		"""
 		try:
 			f = open( filename )
@@ -106,7 +107,7 @@ class parser( object ):
 		i = 0
 		while( i < len( lines ) and lines[ i ][ :10 ] != "file name," ):
 			i+= 1
-		self.sourceFile = lines[ i ].split( ',' )[ 1 ]
+		sourceFile = lines[ i ].split( ',' )[ 1 ]
 		while ( i < len( lines ) and lines[ i ][ :9 ] != "[spectra]" ):
 			i+=1
 		i+=1
@@ -131,11 +132,18 @@ class parser( object ):
 				"retentionTime" : rt,
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
+				"id" : scanId,
+				"lowMz" : lowMz,
+				"highMz" : highMz,
 				"parentScan" : None,
-				"data" : zip( massValues, intensityValues ) 
+				"data" : zip( massValues, intensityValues )
 			})
 
-		return True
+		self.data[ 'metadata' ] = {
+			"sourceFile" : sourceFile
+		}
+
+		return self.data
 
 	def readMzData( self, filename ):
 		"""
@@ -145,30 +153,56 @@ class parser( object ):
 		:Parameters:
 			filename : str
 				The name of the file to load.
+
 		"""
-		dataFile = xml.parseFile( filename )
-		self.sourceFile = dataFile.xpathEval( '//sourceFile/nameOfFile' )[ 0 ].content
-		scans = dataFile.xpathEval( '//spectrum' )
+		dataFile = parse( filename )
+		sourceFileNode = dataFile.getElementsByTagName( 'sourceFile' )[ 0 ].\
+			getElementsByTagName( 'nameOfFile' )[ 0 ]
+		sourceFile = re.sub( "<.*?>", "", sourceFileNode.toxml( ))
+		scans = dataFile.getElementsByTagName( 'spectrum' )
+
 		for scan in scans:
-			msLevel = 1
-			polarity = scan.xpathEval( '*//cvParam[@name="Polarity"]/@value' )
-			if ( polarity == "Negative" ):
-				polarity = -1
-			else:
-				polarity = 1
-			rt = float( scan.xpathEval( '*//cvParam[@name="TimeInMinutes"]/@value' )[0].content )
-			massValues = self._unpackMzData( scan.xpathEval( 'mzArrayBinary/data' )[ 0 ] )
-			intensityValues = self._unpackMzData( scan.xpathEval( 'intenArrayBinary/data' )[ 0 ] )
+			scanId = int( scan.getAttribute( 'id' ))
+			spectrumInstrument = scan.getElementsByTagName( 'spectrumInstrument' )[ 0 ]
+			msLevel = int( spectrumInstrument.getAttribute( 'msLevel' ))
+			lowMz = float( spectrumInstrument.getAttribute( 'mzRangeStart' ))
+			highMz = float( spectrumInstrument.getAttribute( 'mzRangeStop' ))
+			params = spectrumInstrument.getElementsByTagName( 'cvParam' )
+			for param in params:
+				if param.getAttribute( 'name' ) == 'Polarity':
+					if param.getAttribute( 'value' ) == 'positive':
+						polarity = 1
+					else:
+						polarity = -1
+				if param.getAttribute( 'name' ) == 'TimeInMinutes':
+					rt = float( param.getAttribute( 'value' ))
+			
+			massValues = self._unpackMzData( 
+				scan.getElementsByTagName( 'mzArrayBinary' )[ 0 ].getElementsByTagName( 'data' )[ 0 ])
+			intensityValues = self._unpackMzData( 
+				scan.getElementsByTagName( 'intenArrayBinary' )[ 0 ].getElementsByTagName( 'data' )[ 0 ])
+
+			parentScan = None
+			precursorNodes = scan.getElementsByTagName( 'precursor' )
+			if ( len( precursorNodes )):
+				parentScan = int( precursorNodes[ 0 ].getAttribute( 'spectrumRef' ))
 
 			self.data[ "scans" ].append({ 
 				"retentionTime" : rt,
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
-				"parentScan" : None,
-				"data" : dict( zip( massValues, intensityValues )) 
+				"id" : scanId,
+				"lowMz" : lowMz,
+				"highMz" : highMz,
+				"parentScan" : parentScan,
+				"data" : zip( massValues, intensityValues )
 			})
 
-		return True
+		self.data[ 'metadata' ] = {
+			"sourceFile" : sourceFile
+		}
+
+		return self.data
 
 	def _unpackMzData( self, dataNode ):
 		"""
@@ -178,23 +212,20 @@ class parser( object ):
 		:Parameters:
 			dataNode : xmlNode
 				The xml node containing the scan data to be unpacked.
+
 		"""
-		prop = dataNode.properties
-		while prop:
-			if prop.name == 'length':
-				scanSize = int( prop.content )
-			if prop.name == 'endian':
-				endian = prop.content 
-			if prop.name == 'precision':
-				precision = int( prop.content )
-			prop = prop.next
+		scanSize = int( dataNode.getAttribute( 'length' ))
+		if dataNode.getAttribute( 'endian' ) == 'little':
+			byteOrder = '<'
+		else:
+			byteOrder = '>'
+		if dataNode.getAttribute( 'precision' ) == '64':
+			dataType = 'd'
+		else: 
+			dataType='f'
 
-		if precision == 64: type = 'd'
-		else: type='f'
-		if endian == 'little': byteOrder = '<'
-		else: byteOrder = '>'
-
-		return struct.unpack( byteOrder + ( type * scanSize ), b64decode( dataNode.content ))
+		return struct.unpack( byteOrder + ( dataType * scanSize ), 
+			b64decode( re.sub( "<.*?>", "", dataNode.toxml( )).encode( )))
 
 	def readMzXml( self, filename ):
 		"""
@@ -204,6 +235,7 @@ class parser( object ):
 		:Parameters:
 			filename : str
 				The name of the file to load.
+
 		"""
 		dataFile = parse( filename )
 		scans = dataFile.getElementsByTagName( 'scan' )
@@ -235,7 +267,7 @@ class parser( object ):
 
 			# get all of the text (non-tag) content of peaks
 			packedData = re.sub( r"<.*?>", "", peaks.toxml( )).strip( )
-			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ))
+			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ).encode( ))
 			massValues = data[ 0::2 ]
 			intensityValues = data[ 1::2 ] 
 
@@ -250,7 +282,30 @@ class parser( object ):
 				"data" : zip( massValues, intensityValues )
 			})
 
-		return True
+		return self.data
+
+	def _getChildNode( self, node, child ):
+		returnValue = node.firstChild
+		while returnValue and not ( 
+			returnValue.nodeType == returnValue.ELEMENT_NODE and 
+			returnValue.tagName == child ):
+
+			returnValue = returnValue.nextSibling
+		return returnValue
+
+class RawData( object ):
+	"""
+	A class for reading and obtaining data from a mass spectrometry data file
+
+	"""
+	_iterpos = None
+	_data = None
+
+	def __init__( self, dataFile ):
+		object.__init__( self )
+		self._data = Parser.read( dataFile )
+
+
 
 #	def filterByTime( self, minTime=0, maxTime=0 ):
 #		"""
