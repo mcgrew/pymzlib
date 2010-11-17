@@ -30,9 +30,11 @@ License: MIT license.
 import sys
 import os
 import libxml2 as xml
+from xml.dom.minidom import parse
 import struct
 from base64 import b64decode
 import types
+import re
 
 class parser( object ):
 
@@ -130,7 +132,7 @@ class parser( object ):
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
 				"parentScan" : None,
-				"data" : dict( zip( massValues, intensityValues )) 
+				"data" : zip( massValues, intensityValues ) 
 			})
 
 		return True
@@ -203,38 +205,37 @@ class parser( object ):
 			filename : str
 				The name of the file to load.
 		"""
-		dataFile = xml.parseFile( filename )
-		dataContext = dataFile.xpathNewContext( )
-		dataContext.xpathRegisterNs( 'def', dataFile.getRootElement( ).ns( ).getContent( ))
-		scans = dataContext.xpathEval( '//def:scan[@msLevel="1"]' )
-		polarity = None # <-- fix this
+		dataFile = parse( filename )
+		scans = dataFile.getElementsByTagName( 'scan' )
 		for scan in scans:
-			msLevel = 1
-			prop = scan.properties
-			while prop:
-				if prop.name == 'peaksCount':
-					scanSize = int( prop.content )
-				if prop.name == 'retentionTime':
-					rt = float( prop.content[ 2:-1 ] ) / 60
-				if prop.name == 'msLevel':
-					msLevel = int( prop.content )
-				prop = prop.next
+			msLevel = int( scan.getAttribute( "msLevel" ))
+			scanSize = int( scan.getAttribute( 'peaksCount' ))
+			rt = float( scan.getAttribute( 'retentionTime' )[ 2:-1 ] ) / 60
+			scanId = int( scan.getAttribute( 'num' ))
+			lowMz = float( scan.getAttribute( 'lowMz' ))
+			highMz = float( scan.getAttribute( 'highMz' ))
+			if ( scan.getAttribute( 'polarity' ) == '+' ):
+				polarity = 1
+			else:
+				polarity = -1
+			if msLevel == 1:
+				parentScan = None
+			else:
+				parentScan = int( scan.parentNode.getAttribute( 'num' ))
 
-			peaks = scan.children
-			while peaks and not peaks.name == 'peaks': 
-				peaks = peaks.next
-			if not peaks:
-				continue
-			precision = peaks.properties
-			while not precision.name == 'precision':
-				precision = precision.next
-			precision = int( precision.content )
+			peaks = scan.firstChild
+			while not ( peaks.nodeType == peaks.ELEMENT_NODE and peaks.tagName == 'peaks' ):
+				peaks = peaks.nextSibling
 
-			if precision == 64: type = 'd'
-			else: type='f'
+			if peaks.getAttribute( 'precision' ) == '64':
+				type = 'd'
+			else: 
+				type='f'
 			byteOrder = '>'
 
-			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( peaks.content ))
+			# get all of the text (non-tag) content of peaks
+			packedData = re.sub( r"<.*?>", "", peaks.toxml( )).strip( )
+			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ))
 			massValues = data[ 0::2 ]
 			intensityValues = data[ 1::2 ] 
 
@@ -242,8 +243,11 @@ class parser( object ):
 				"retentionTime" : rt,
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
-				"parentScan" : None,
-				"data" : dict( zip( massValues, intensityValues )) 
+				"id" : scanId,
+				"lowMz" : lowMz,
+				"highMz" : highMz,
+				"parentScan" : parentScan,
+				"data" : zip( massValues, intensityValues )
 			})
 
 		return True
