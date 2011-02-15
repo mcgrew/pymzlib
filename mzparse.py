@@ -35,10 +35,9 @@ import struct
 from base64 import b64decode
 import types
 import re
+import zlib
 
 class Parser( object ):
-
-	data = { "metadata" : {}, "scans" : [] }
 
 	def __init__( self, options=None ):
 		"""
@@ -71,20 +70,16 @@ class Parser( object ):
 			return False
 
 		if ( fileExt.lower( ) == "csv" ):
-			returnvalue =  self.readCsv( filename )
+			return self.readCsv( filename )
 
 		elif ( fileExt.lower( ) == "mzdata" ):
-			returnvalue = self.readMzData( filename )
+			return self.readMzData( filename )
 
 		elif ( fileExt.lower( ) == "mzxml" ):
-			returnvalue =  self.readMzXml( filename )
+			return self.readMzXml( filename )
 		else:
 			sys.stderr.write( "Unrecognized file type for %s\n" % filename )
 			return False
-
-		if not returnvalue:
-			return False
-		return True
 
 	def readCsv( self, filename ):
 		"""
@@ -96,6 +91,7 @@ class Parser( object ):
 				The name of the file to load.
 
 		"""
+		returnValue = { "metadata" : {}, "scans" : [] }
 		try:
 			f = open( filename )
 			lines = f.readlines( )
@@ -128,7 +124,7 @@ class Parser( object ):
 			intensityValues = [  float( x )  for x in values[ 8:-1:2 ] ]
 			massValues = [ float( y ) for y in values[ 7:-1:2 ] ]
 
-			self.data[ "scans" ].append({ 
+			returnValue[ "scans" ].append({ 
 				"retentionTime" : rt,
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
@@ -136,14 +132,16 @@ class Parser( object ):
 				"lowMz" : lowMz,
 				"highMz" : highMz,
 				"parentScan" : None,
+				"precursorMz" : None,
+				"collisionEnergy" : None,
 				"data" : zip( massValues, intensityValues )
 			})
 
-		self.data[ 'metadata' ] = {
+		returnValue[ 'metadata' ] = {
 			"sourceFile" : sourceFile
 		}
 
-		return self.data
+		return returnValue
 
 	def readMzData( self, filename ):
 		"""
@@ -155,6 +153,7 @@ class Parser( object ):
 				The name of the file to load.
 
 		"""
+		returnValue = { "metadata" : {}, "scans" : [] }
 		dataFile = parse( filename )
 		sourceFileNode = dataFile.getElementsByTagName( 'sourceFile' )[ 0 ].\
 			getElementsByTagName( 'nameOfFile' )[ 0 ]
@@ -162,6 +161,9 @@ class Parser( object ):
 		scans = dataFile.getElementsByTagName( 'spectrum' )
 
 		for scan in scans:
+			parentScan = None
+			precursorMz = None
+			collisionEnergy = None
 			scanId = int( scan.getAttribute( 'id' ))
 			spectrumInstrument = scan.getElementsByTagName( 'spectrumInstrument' )[ 0 ]
 			msLevel = int( spectrumInstrument.getAttribute( 'msLevel' ))
@@ -176,18 +178,28 @@ class Parser( object ):
 						polarity = -1
 				if param.getAttribute( 'name' ) == 'TimeInMinutes':
 					rt = float( param.getAttribute( 'value' ))
+
 			
 			massValues = self._unpackMzData( 
 				scan.getElementsByTagName( 'mzArrayBinary' )[ 0 ].getElementsByTagName( 'data' )[ 0 ])
 			intensityValues = self._unpackMzData( 
 				scan.getElementsByTagName( 'intenArrayBinary' )[ 0 ].getElementsByTagName( 'data' )[ 0 ])
 
-			parentScan = None
-			precursorNodes = scan.getElementsByTagName( 'precursor' )
-			if ( len( precursorNodes )):
-				parentScan = int( precursorNodes[ 0 ].getAttribute( 'spectrumRef' ))
+			precursors = scan.getElementsByTagName( 'precursor' )
+			for precursor in precursors[ 0:1 ]:
+				parentScan = int( precursor.getAttribute( 'spectrumRef' ))
+				cvParams = precursor.getElementsByTagName( 'cvParam' )
+				for param in cvParams:
+					if param.getAttribute( 'name' ) == 'MassToChargeRatio':
+						precursorMz = float( param.getAttribute( 'value' ))
+#					if param.getAttribute( 'name' ) == 'ChargeState':
+#						chargeState = int( param.getAttribute( 'value' ))
+					if param.getAttribute( 'name' ) == 'CollisionEnergy':
+						collisionEnergy = float( param.getAttribute( 'value' ))
 
-			self.data[ "scans" ].append({ 
+
+
+			returnValue[ "scans" ].append({ 
 				"retentionTime" : rt,
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
@@ -195,14 +207,16 @@ class Parser( object ):
 				"lowMz" : lowMz,
 				"highMz" : highMz,
 				"parentScan" : parentScan,
+				"precursorMz" : precursorMz,
+				"collisionEnergy" : collisionEnergy,
 				"data" : zip( massValues, intensityValues )
 			})
 
-		self.data[ 'metadata' ] = {
+		returnValue[ 'metadata' ] = {
 			"sourceFile" : sourceFile
 		}
 
-		return self.data
+		return returnValue
 
 	def _unpackMzData( self, dataNode ):
 		"""
@@ -222,10 +236,10 @@ class Parser( object ):
 		if dataNode.getAttribute( 'precision' ) == '64':
 			dataType = 'd'
 		else: 
-			dataType='f'
+			dataType = 'f'
 
 		return struct.unpack( byteOrder + ( dataType * scanSize ), 
-			b64decode( re.sub( "<.*?>", "", dataNode.toxml( )).encode( )))
+			b64decode( re.sub( "<.*?>", "", dataNode.toxml( ))))
 
 	def readMzXml( self, filename ):
 		"""
@@ -237,9 +251,12 @@ class Parser( object ):
 				The name of the file to load.
 
 		"""
+		returnValue = { "metadata" : {}, "scans" : [] }
 		dataFile = parse( filename )
 		scans = dataFile.getElementsByTagName( 'scan' )
 		for scan in scans:
+			collisionEnergy = None
+			precursorMz = None
 			msLevel = int( scan.getAttribute( "msLevel" ))
 			scanSize = int( scan.getAttribute( 'peaksCount' ))
 			rt = float( scan.getAttribute( 'retentionTime' )[ 2:-1 ] ) / 60
@@ -254,6 +271,12 @@ class Parser( object ):
 				parentScan = None
 			else:
 				parentScan = int( scan.parentNode.getAttribute( 'num' ))
+				if ( scan.getAttribute( 'collisionEnergy' )):
+					collisionEnergy = float( scan.getAttribute( 'collisionEnergy' ))
+				precursorTags = scan.getElementsByTagName( 'precursorMz' )
+				if ( len( precursorTags )):
+					precursorMz = float( re.sub( r"<.*?>", "", precursorTags[ 0 ].toxml( )).strip( ))
+			
 
 			peaks = scan.firstChild
 			while not ( peaks.nodeType == peaks.ELEMENT_NODE and peaks.tagName == 'peaks' ):
@@ -267,11 +290,16 @@ class Parser( object ):
 
 			# get all of the text (non-tag) content of peaks
 			packedData = re.sub( r"<.*?>", "", peaks.toxml( )).strip( )
-			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ).encode( ))
+			if ( peaks.getAttribute( 'compressionType' ) == 'zlib' ):
+				print( "Gzip compression is not yet supported" )
+				data = [0, 0]
+#				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), zlib.decompress( b64decode( packedData )))
+			else:
+				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ))
 			massValues = data[ 0::2 ]
 			intensityValues = data[ 1::2 ] 
 
-			self.data[ "scans" ].append({ 
+			returnValue[ "scans" ].append({ 
 				"retentionTime" : rt,
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
@@ -279,10 +307,16 @@ class Parser( object ):
 				"lowMz" : lowMz,
 				"highMz" : highMz,
 				"parentScan" : parentScan,
+				"precursorMz" : precursorMz,
+				"collisionEnergy" : collisionEnergy,
 				"data" : zip( massValues, intensityValues )
 			})
 
-		return self.data
+		return returnValue
+
+	def readMzml( self, filename ):
+		pass
+		
 
 	def _getChildNode( self, node, child ):
 		returnValue = node.firstChild
@@ -298,14 +332,18 @@ class RawData( object ):
 	A class for reading and obtaining data from a mass spectrometry data file
 
 	"""
-	_iterpos = None
-	_data = None
+	def __init__( self ):
+		object.__init__( self, metadata=None )
+		self.metadata = dict( )
+		self.scans = [[],[]]
 
-	def __init__( self, dataFile ):
-		object.__init__( self )
-		self._data = Parser.read( dataFile )
+	def addScan( self, scan ):
+		self.scans[ scan.level-1 ].append( scan )
 
-
+	def getScans( self, level=None ):
+		if not level:
+			return sorted( scans[ 0 ] + scans[ 1 ] )
+		return scans[ level-1 ]
 
 #	def filterByTime( self, minTime=0, maxTime=0 ):
 #		"""
@@ -349,4 +387,46 @@ class RawData( object ):
 #					self.intensity[ i ][ j ] = 0
 #
 #		return True 
+
+class Scan( object ):
+	
+	"""
+	A class for holding data related to a single scan.
+	"""
+	def __init__( self, id=0, retentionTime=0, msLevel=1, polarity=1, lowMz=0, highMz=2200, data=list( ), metadata=dict( ), parentScan=None, precursorMa=None, collisionEnergy=None):
+		self.retentionTime = retentionTime
+		self.level = msLevel
+		self.metadata = metadata
+		self.points = list( )
+
+	def __iter__( self ):
+		return self.points
+
+	def __lt__( self, scan ):
+		return self.retentionTime < scan.retentionTime
+	
+	def __gt__( self, scan ):
+		return self.retentionTime > scan.retentionTime
+
+	def __eq__( self, scan ):
+		return self.retentionTime == scan.retentionTime
+	
+	def __le__( self, scan ):
+		return self.retentionTime <= scan.retentionTime
+
+	def __ge__( self, scan ):
+		return self.retentionTime >= scan.retentionTime
+
+	def __ne__( self, scan ):
+		return self.retentionTime != scan.retentionTime
+
+	def addDataPoint( mz, intensity ):
+		self.points.append(( mz, intensity ))
+
+	def filterByMass( minMass=0, maxMass=1048576 ):
+		returnValue = Scan( self._metadata )
+		for point in [ (mz,intensity) for (mz,intensity) in self.points if ( mz > minMass and mz < maxMass ) ]:
+			returnValue.add( *point )
+		return returnValue
+	
 
