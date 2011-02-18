@@ -291,9 +291,7 @@ class Parser( object ):
 			# get all of the text (non-tag) content of peaks
 			packedData = re.sub( r"<.*?>", "", peaks.toxml( )).strip( )
 			if ( peaks.getAttribute( 'compressionType' ) == 'zlib' ):
-				print( "Gzip compression is not yet supported" )
-				data = [0, 0]
-#				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), zlib.decompress( b64decode( packedData )))
+				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), zlib.decompress( b64decode( packedData )))
 			else:
 				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ))
 			massValues = data[ 0::2 ]
