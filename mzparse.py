@@ -91,7 +91,7 @@ class Parser( object ):
 				The name of the file to load.
 
 		"""
-		returnValue = { "metadata" : {}, "scans" : [] }
+		returnValue = { "scans" : [] }
 		try:
 			f = open( filename )
 			lines = f.readlines( )
@@ -137,9 +137,7 @@ class Parser( object ):
 				"data" : zip( massValues, intensityValues )
 			})
 
-		returnValue[ 'metadata' ] = {
-			"sourceFile" : sourceFile
-		}
+		returnValue[ 'sourceFile' ] = sourceFile
 
 		return returnValue
 
@@ -153,7 +151,7 @@ class Parser( object ):
 				The name of the file to load.
 
 		"""
-		returnValue = { "metadata" : {}, "scans" : [] }
+		returnValue = { "scans" : [] }
 		dataFile = parse( filename )
 		sourceFileNode = dataFile.getElementsByTagName( 'sourceFile' )[ 0 ].\
 			getElementsByTagName( 'nameOfFile' )[ 0 ]
@@ -212,9 +210,7 @@ class Parser( object ):
 				"data" : zip( massValues, intensityValues )
 			})
 
-		returnValue[ 'metadata' ] = {
-			"sourceFile" : sourceFile
-		}
+		returnValue[ 'sourceFile' ] = sourceFile
 
 		return returnValue
 
@@ -251,7 +247,7 @@ class Parser( object ):
 				The name of the file to load.
 
 		"""
-		returnValue = { "metadata" : {}, "scans" : [] }
+		returnValue = { "scans" : [] }
 		dataFile = parse( filename )
 		scans = dataFile.getElementsByTagName( 'scan' )
 		for scan in scans:
@@ -325,24 +321,68 @@ class Parser( object ):
 			returnValue = returnValue.nextSibling
 		return returnValue
 
-class RawData( object ):
+def removeScans( mzData, minTime=0, maxTime=sys.maxint ):
 	"""
-	A class for reading and obtaining data from a mass spectrometry data file
+	:Parameters:
+		mzData : dict
+			A dictionary object containing scan data, normally returned from 
+			Parser.read( )
+		minTime : float
+			The minimum retention time for the scans to remove
+		maxTime : float
+			The maximum retention time for the scans to remove
 
+	rtype: dict
+	return: The data after filtering is applied.
 	"""
-	def __init__( self ):
-		object.__init__( self, metadata=None )
-		self.metadata = dict( )
-		self.scans = [[],[]]
+	if minTime > maxTime:
+		return mzData
+	mzData[ 'scans' ] = [ scan for scan in mzData['scans'] if 
+	                      scan[ 'retentionTime' ] < minTime or 
+	                      scan[ 'retentionTime' ] > maxTime ]
+	return mzData
 
-	def addScan( self, scan ):
-		self.scans[ scan.level-1 ].append( scan )
+def removeMass( mzData, mz, tolerance ):
+	"""
+	:Parameters:
+		mzData : dict
+			A dictionary object containing scan data, normally returned from 
+			Parser.read( )
+		mz : float
+			The m/z value of the mass to be removed from all scans.
+		tolerance : float
+			The tolerance to use for determining if the data point should be removed.
 
-	def getScans( self, level=None ):
-		if not level:
-			return sorted( scans[ 0 ] + scans[ 1 ] )
-		return scans[ level-1 ]
+	rtype: dict
+	return: The data after filtering is applied.
+	"""
+	for scan in mzData[ 'scans' ]:
+		scan[ 'data' ] = [ point for point in scan[ 'data' ] if 
+		                   point[ 0 ] < mz - tolerance or
+		                   point[ 0 ] > mz + tolerance ]
+	return mzData
 
+#class RawData( object ):
+#	"""
+#	A class for reading and obtaining data from a mass spectrometry data file
+#
+#	"""
+#	def __init__( self, data=dict( )):
+#		object.__init__( self )
+#		self.data = data
+#
+#	def addScan( self, scan ):
+#		self.data[ 'scans' ].append( scan )
+#
+#	def getScans( self, level=None ):
+#		if not level:
+#			return self.scans
+#		returnvalue = list()
+#		for scan in self.scans:
+#			if scan[ 'mslevel' ] == level:
+#				returnvalue.append( scan )
+#		return returnvalue
+#
 #	def filterByTime( self, minTime=0, maxTime=0 ):
 #		"""
 #		Filters the data by retention time, removing any unwanted data
@@ -378,53 +418,64 @@ class RawData( object ):
 #			maxMass : float
 #				The maximum mass to retain.
 #		"""
-#		for i in xrange( len( self.rt )): 
+#		for scan in self.scans:
 #			for j in xrange( len( self.mass[ i ])):
 #				if ( self.mass[ i ][ j ] < minMass or self.mass[ i ][ j ] > maxMass ):
 #					self.mass[ i ][ j ] = 0
 #					self.intensity[ i ][ j ] = 0
 #
 #		return True 
-
-class Scan( object ):
-	
-	"""
-	A class for holding data related to a single scan.
-	"""
-	def __init__( self, id=0, retentionTime=0, msLevel=1, polarity=1, lowMz=0, highMz=2200, data=list( ), metadata=dict( ), parentScan=None, precursorMa=None, collisionEnergy=None):
-		self.retentionTime = retentionTime
-		self.level = msLevel
-		self.metadata = metadata
-		self.points = list( )
-
-	def __iter__( self ):
-		return self.points
-
-	def __lt__( self, scan ):
-		return self.retentionTime < scan.retentionTime
-	
-	def __gt__( self, scan ):
-		return self.retentionTime > scan.retentionTime
-
-	def __eq__( self, scan ):
-		return self.retentionTime == scan.retentionTime
-	
-	def __le__( self, scan ):
-		return self.retentionTime <= scan.retentionTime
-
-	def __ge__( self, scan ):
-		return self.retentionTime >= scan.retentionTime
-
-	def __ne__( self, scan ):
-		return self.retentionTime != scan.retentionTime
-
-	def addDataPoint( mz, intensity ):
-		self.points.append(( mz, intensity ))
-
-	def filterByMass( minMass=0, maxMass=1048576 ):
-		returnValue = Scan( self._metadata )
-		for point in [ (mz,intensity) for (mz,intensity) in self.points if ( mz > minMass and mz < maxMass ) ]:
-			returnValue.add( *point )
-		return returnValue
-	
+#
+#class Scan( object ):
+#	
+#	"""
+#	A class for holding data related to a single scan.
+#	"""
+#	def __init__( self, id=0, retentionTime=0, msLevel=1, polarity=1, lowMz=0, 
+#	              highMz=2200, data=list( ), parentScan=None, precursorMz=None, 
+#								collisionEnergy=None ):
+#		self.id = id
+#		self.retentionTime = retentionTime
+#		self.msLevel = msLevel
+#		self.polarity = polarity
+#		self.lowMz = lowMz
+#		self.highMz = highMz
+#		self.data = data
+#		self.parentScan = parentScan
+#		self.precursor = precursorMz
+#		self.collisionEnergy = collisionEnergy
+#
+#	def __iter__( self ):
+#		return self.points
+#
+#	def __lt__( self, scan ):
+#		return self.retentionTime < scan.retentionTime
+#	
+#	def __gt__( self, scan ):
+#		return self.retentionTime > scan.retentionTime
+#
+#	def __eq__( self, scan ):
+#		return self.retentionTime == scan.retentionTime
+#	
+#	def __le__( self, scan ):
+#		return self.retentionTime <= scan.retentionTime
+#
+#	def __ge__( self, scan ):
+#		return self.retentionTime >= scan.retentionTime
+#
+#	def __ne__( self, scan ):
+#		return self.retentionTime != scan.retentionTime
+#
+#	def addDataPoint( mz, intensity ):
+#		self.points.append(( mz, intensity ))
+#
+#	def filterMass( mass, window ):
+#		returnvalue = Scan( self.id, self.retentionTime, self.msLevel, self.polarity
+#		                    self.lowMz, self.highMz, list( ), self.parentScan, 
+#												self.precursorMz, self.collisionEnergy )
+#		for ( point in data ):
+#			if ( point[ 0 ] < mass - window or point[ 0 ] > mass + window ):
+#				returnvalue.data.append( point )
+#		return returnvalue
+#	
 
