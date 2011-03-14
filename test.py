@@ -1,6 +1,6 @@
 #!/usr/bin/env python2
 
-from mzparse import Parser
+from mzlib import *
 
 parser = Parser( )
 mzXML2 = parser.read( "testData/tiny1.mzXML2.0.mzXML" )

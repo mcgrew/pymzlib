@@ -36,6 +36,7 @@ from base64 import b64decode
 import types
 import re
 import zlib
+import json
 
 class Parser( object ):
 
@@ -103,7 +104,7 @@ class Parser( object ):
 		i = 0
 		while( i < len( lines ) and lines[ i ][ :10 ] != "file name," ):
 			i+= 1
-		sourceFile = lines[ i ].split( ',' )[ 1 ]
+		returnValue[ 'sourceFile' ] = lines[ i ].split( ',' )[ 1 ]
 		while ( i < len( lines ) and lines[ i ][ :9 ] != "[spectra]" ):
 			i+=1
 		i+=1
@@ -112,8 +113,9 @@ class Parser( object ):
 			sys.stderr.write( "Unable to parse the reference file '%s'\n" % filename ) 
 			return False
 	
-		msLevel = 1
+		scanId = 0
 		for line in lines[ i: ]:
+			scanId += 1
 			values = line.split( ',' )
 			if values[ 4 ] == '-':
 				polarity = -1
@@ -127,17 +129,15 @@ class Parser( object ):
 			returnValue[ "scans" ].append({ 
 				"retentionTime" : rt,
 				"polarity" : polarity, 
-				"msLevel" : msLevel, 
+				"msLevel" : 1,
 				"id" : scanId,
-				"lowMz" : lowMz,
-				"highMz" : highMz,
+				"lowMz" : min( massValues ),
+				"highMz" : max( massValues ),
 				"parentScan" : None,
 				"precursorMz" : None,
 				"collisionEnergy" : None,
 				"data" : zip( massValues, intensityValues )
 			})
-
-		returnValue[ 'sourceFile' ] = sourceFile
 
 		return returnValue
 
@@ -361,6 +361,58 @@ def removeMass( mzData, mz, tolerance ):
 		                   point[ 0 ] < mz - tolerance or
 		                   point[ 0 ] > mz + tolerance ]
 	return mzData
+
+def writeCsv( mzData, filename ):
+	"""
+	:Parameters:
+		mzData : dict
+			A dictionary object containing scan data, normally returned from
+			Parser.read( )
+		filename : string
+			The name of the file to write to.
+
+	rtype: bool
+	return: True if the write succeeded
+	"""
+	out = open( filename, 'w' )
+	out.write( "[data source]\n" )
+	out.write( "file name,%s\n" % mzData[ 'sourceFile' ] )
+	out.write( "[filters]\n" )
+	out.write( "number of spectra,%d\n" % len( mzData['scans'] ))
+	out.write( "[format]\n" )
+	out.write( "retention time, sample, period, experiment, polarity, scan type, points, x1, y1, x2, y2, ...\n" )
+	out.write( "[spectra]\n" )
+	for scan in mzData[ 'scans' ]:
+		if ( scan[ 'polarity' ] > 0 ):
+			polarity = '+'
+		else:
+			polairty = '-'
+		out.write( "%.4f,%d,%d,%d,%s,%s,%d" % 
+		          ( scan[ 'retentionTime' ], 1, 1, 1, polarity, "peak", 
+							len( scan[ 'data' ])))
+		for point in scan[ 'data' ]:
+			out.write( ',%f,%d' % point )
+		out.write( "\n" )
+	out.close( )
+		
+def writeMzData( mzData, filename ):
+	pass
+
+def writeMzXML( mzData, filename ):
+	pass
+
+def writeMzML( mzData, filename ):
+	pass
+
+def writeJson( mzData, filename ):
+	out = open( filename, 'w' )
+	json.dump( mzData, out )
+	out.close( )
+
+def writeJsonGz( mzData, filename, compressionLevel=6 ):
+	out = open( filename, 'w' )
+	out.write( zlib.compress( json.dumps( mzData ), compressonLevel ))
+	out.close( )
 
 #class RawData( object ):
 #	"""
