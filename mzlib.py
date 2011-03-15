@@ -37,495 +37,497 @@ import types
 import re
 import zlib
 import json
+from copy import deepcopy
 
-#def read( filename ):
-#	"""
-#	Load a file into this reference. This method will automatically detect the
-#	file type based on the file extension.
-#
-#	:Parameters:
-#		filename : str
-#			The name of the file to load.
-#
-#	"""
-#
-#	if not os.path.exists( filename ):
-#		raise IOError( "The file %s does not exist or is not readable" % filename )
-#
-#	try:
-#		fileExt = filename[ filename.rindex( '.' )+1: ]
-#	except ValueError:
-#		return False
-#
-#	if ( fileExt.lower( ) == "csv" ):
-#		return readCsv( filename )
-#
-#	elif ( fileExt.lower( ) == "mzdata" ):
-#		return readMzData( filename )
-#
-#	elif ( fileExt.lower( ) == "mzxml" ):
-#		return readMzXml( filename )
-#	else:
-#		sys.stderr.write( "Unrecognized file type for %s\n" % filename )
-#		return False
-#
-def readCsv( filename ):
-	"""
-	Read a file in Agilent csv format. 
+class RawData( object ):
 
-	:Parameters:
-		filename : str
-			The name of the file to load.
+	def __init__( self, _input=None ):
+		if _input:
+			if type( _input ) == RawData:
+				# copy the passed in object
+				self.data = deepcopy( _input.data )
 
-	"""
-	returnValue = { "scans" : [] }
-	try:
-		f = open( filename )
-		lines = f.readlines( )
-		f.close
-	except IOError:
-		sys.stderr.write( "Error: unable to read file '%s'\n" % filename )
-		return False
+			elif type( _input ) == str:
+				# read the passed in file name
+				self.read( _input )
 
-	i = 0
-	while( i < len( lines ) and lines[ i ][ :10 ] != "file name," ):
-		i+= 1
-	returnValue[ 'sourceFile' ] = lines[ i ].split( ',' )[ 1 ]
-	while ( i < len( lines ) and lines[ i ][ :9 ] != "[spectra]" ):
-		i+=1
-	i+=1
-
-	if ( i > len( lines ) ):
-		sys.stderr.write( "Unable to parse the reference file '%s'\n" % filename ) 
-		return False
-
-	scanId = 0
-	for line in lines[ i: ]:
-		scanId += 1
-		values = line.split( ',' )
-		if values[ 4 ] == '-':
-			polarity = -1
 		else:
-			polarity = 1
-		rt = float( values[ 0 ])
-		count = float( values[ 6 ])
-		intensityValues = [  float( x )  for x in values[ 8:-1:2 ] ]
-		massValues = [ float( y ) for y in values[ 7:-1:2 ] ]
+			self.data = { 'scans' : [] }
 
-		returnValue[ "scans" ].append({ 
-			"retentionTime" : rt,
-			"polarity" : polarity, 
-			"msLevel" : 1,
-			"id" : scanId,
-			"lowMz" : min( massValues ),
-			"highMz" : max( massValues ),
-			"parentScan" : None,
-			"precursorMz" : None,
-			"collisionEnergy" : None,
-			"data" : zip( massValues, intensityValues )
-		})
+	def getData( self ):
+		return self.data
 
-	return returnValue
+	def getScan( self, retentionTime ):
+		"""
+		Gets a scan from the data by retention time.
+		:Parameters:
+			retentionTime : float
+				A float indicating the retention time of the scan to retrieve. The scan
+				closest to that time is returned.
 
-def readMzData( filename ):
-	"""
-	Read a file in mzData format. 
-
-	:Parameters:
-		filename : str
-			The name of the file to load.
-
-	"""
-	returnValue = { "scans" : [] }
-	dataFile = parse( filename )
-	sourceFileNode = dataFile.getElementsByTagName( 'sourceFile' )[ 0 ].\
-		getElementsByTagName( 'nameOfFile' )[ 0 ]
-	sourceFile = re.sub( "<.*?>", "", sourceFileNode.toxml( ))
-	scans = dataFile.getElementsByTagName( 'spectrum' )
-
-	for scan in scans:
-		parentScan = None
-		precursorMz = None
-		collisionEnergy = None
-		scanId = int( scan.getAttribute( 'id' ))
-		spectrumInstrument = scan.getElementsByTagName( 'spectrumInstrument' )[ 0 ]
-		msLevel = int( spectrumInstrument.getAttribute( 'msLevel' ))
-		lowMz = float( spectrumInstrument.getAttribute( 'mzRangeStart' ))
-		highMz = float( spectrumInstrument.getAttribute( 'mzRangeStop' ))
-		params = spectrumInstrument.getElementsByTagName( 'cvParam' )
-		for param in params:
-			if param.getAttribute( 'name' ) == 'Polarity':
-				if param.getAttribute( 'value' ) == 'positive':
-					polarity = 1
-				else:
-					polarity = -1
-			if param.getAttribute( 'name' ) == 'TimeInMinutes':
-				rt = float( param.getAttribute( 'value' ))
-
+		rtype: dict
+		return: A dict containing the scan points & metadata
+		"""
+		difference = 1048576
+		returnvalue = None
+		for scan in self.data[ 'scans' ]:
+			currentDifference = scan[ 'retentionTime' ] - retentionTime
+			if currentDifference < difference:
+				difference = currentDifference
+				returnvalue = scan
+		return returnvalue
 		
-		massValues = _unpackMzData( 
-			scan.getElementsByTagName( 'mzArrayBinary' )[ 0 ].getElementsByTagName( 'data' )[ 0 ])
-		intensityValues = _unpackMzData( 
-			scan.getElementsByTagName( 'intenArrayBinary' )[ 0 ].getElementsByTagName( 'data' )[ 0 ])
+	def __getitem__( self, value ):	
+		"""
+		Returns a list indicating the sic intensity for each scan in order. Only for
+		level 1 scans - other scans are omitted.
+		:Parameters:
+			value : slice
+				The m/z indices to retrieve intensity values between.
 
-		precursors = scan.getElementsByTagName( 'precursor' )
-		for precursor in precursors[ 0:1 ]:
-			parentScan = int( precursor.getAttribute( 'spectrumRef' ))
-			cvParams = precursor.getElementsByTagName( 'cvParam' )
-			for param in cvParams:
-				if param.getAttribute( 'name' ) == 'MassToChargeRatio':
-					precursorMz = float( param.getAttribute( 'value' ))
+		rtype: list
+		return: A list of intensity values.
+		"""
+		returnvalue = []
+		if type( value ) == slice:
+			start = value.start if value.start else 0
+			stop = value.stop if value.stop else 1048576
+			
+			for scan in self.data[ 'scans' ]:
+				if scan['msLevel'] == 1:
+					returnvalue.append( sum([ x[1] for x in scan[ 'points' ] 
+														  if x[0] > start and x[0] < stop ]))
+		else:
+			for scan in self.data[ 'scans' ]:
+				if scan['msLevel'] == 1:
+					returnvalue.append( sum([ x[1] for x in scan[ 'points' ] 
+															if x[0] == value ]))
+		return returnvalue
+
+	def __iter__( self ):
+		return iter( self.data['scans'] )
+
+
+	def read( self, filename ):
+		"""
+		Load a file into this reference. This method will automatically detect the
+		file type based on the file extension.
+
+		:Parameters:
+			filename : str
+				The name of the file to load.
+
+		"""
+	
+		if not os.path.exists( filename ):
+			raise IOError( "The file %s does not exist or is not readable" % filename )
+
+		try:
+			fileExt = filename[ filename.rindex( '.' )+1: ]
+		except ValueError:
+			return False
+
+		if ( fileExt.lower( ) == "csv" ):
+			return self.readCsv( filename )
+
+		elif ( fileExt.lower( ) == "mzdata" ):
+			return self.readMzData( filename )
+
+		elif ( fileExt.lower( ) == "mzxml" ):
+			return self.readMzXml( filename )
+		else:
+			sys.stderr.write( "Unrecognized file type for %s\n" % filename )
+			return False
+
+	def readCsv( self, filename ):
+		"""
+		Read a file in Agilent csv format. 
+
+		:Parameters:
+			filename : str
+				The name of the file to load.
+
+		"""
+		self.data = { "scans" : [] }
+		try:
+			f = open( filename )
+			lines = f.readlines( )
+			f.close
+		except IOError:
+			sys.stderr.write( "Error: unable to read file '%s'\n" % filename )
+			return False
+
+		i = 0
+		while( i < len( lines ) and lines[ i ][ :10 ] != "file name," ):
+			i+= 1
+		self.data[ 'sourceFile' ] = lines[ i ].split( ',' )[ 1 ]
+		while ( i < len( lines ) and lines[ i ][ :9 ] != "[spectra]" ):
+			i+=1
+		i+=1
+
+		if ( i > len( lines ) ):
+			sys.stderr.write( "Unable to parse the reference file '%s'\n" % filename ) 
+			return False
+
+		scanId = 0
+		for line in lines[ i: ]:
+			scanId += 1
+			values = line.split( ',' )
+			if values[ 4 ] == '-':
+				polarity = -1
+			else:
+				polarity = 1
+			rt = float( values[ 0 ])
+			count = float( values[ 6 ])
+			intensityValues = [  float( x )  for x in values[ 8:-1:2 ] ]
+			massValues = [ float( y ) for y in values[ 7:-1:2 ] ]
+
+			self.data[ "scans" ].append({ 
+				"retentionTime" : rt,
+				"polarity" : polarity, 
+				"msLevel" : 1,
+				"id" : scanId,
+				"lowMz" : min( massValues ),
+				"highMz" : max( massValues ),
+				"parentScan" : None,
+				"precursorMz" : None,
+				"collisionEnergy" : None,
+				"points" : list( zip( massValues, intensityValues ))
+			})
+		return True
+
+	def readMzData( self, filename ):
+		"""
+		Read a file in mzData format. 
+
+		:Parameters:
+			filename : str
+				The name of the file to load.
+
+		"""
+		self.data = { "scans" : [] }
+		dataFile = parse( filename )
+		sourceFileNode = dataFile.getElementsByTagName( 'sourceFile' )[ 0 ].\
+			getElementsByTagName( 'nameOfFile' )[ 0 ]
+		self.data[ 'sourceFile' ] = re.sub( "<.*?>", "", sourceFileNode.toxml( ))
+		scans = dataFile.getElementsByTagName( 'spectrum' )
+
+		for scan in scans:
+			parentScan = None
+			precursorMz = None
+			collisionEnergy = None
+			scanId = int( scan.getAttribute( 'id' ))
+			spectrumInstrument = scan.getElementsByTagName( 'spectrumInstrument' )[ 0 ]
+			msLevel = int( spectrumInstrument.getAttribute( 'msLevel' ))
+			lowMz = float( spectrumInstrument.getAttribute( 'mzRangeStart' ))
+			highMz = float( spectrumInstrument.getAttribute( 'mzRangeStop' ))
+			params = spectrumInstrument.getElementsByTagName( 'cvParam' )
+			for param in params:
+				if param.getAttribute( 'name' ) == 'Polarity':
+					if param.getAttribute( 'value' ) == 'positive':
+						polarity = 1
+					else:
+						polarity = -1
+				if param.getAttribute( 'name' ) == 'TimeInMinutes':
+					rt = float( param.getAttribute( 'value' ))
+
+			
+			massValues = self._unpackMzData( 
+				scan.getElementsByTagName( 'mzArrayBinary' )[ 0 ].getElementsByTagName( 'data' )[ 0 ])
+			intensityValues = self._unpackMzData( 
+				scan.getElementsByTagName( 'intenArrayBinary' )[ 0 ].getElementsByTagName( 'data' )[ 0 ])
+
+			precursors = scan.getElementsByTagName( 'precursor' )
+			for precursor in precursors[ 0:1 ]:
+				parentScan = int( precursor.getAttribute( 'spectrumRef' ))
+				cvParams = precursor.getElementsByTagName( 'cvParam' )
+				for param in cvParams:
+					if param.getAttribute( 'name' ) == 'MassToChargeRatio':
+						precursorMz = float( param.getAttribute( 'value' ))
 #					if param.getAttribute( 'name' ) == 'ChargeState':
 #						chargeState = int( param.getAttribute( 'value' ))
-				if param.getAttribute( 'name' ) == 'CollisionEnergy':
-					collisionEnergy = float( param.getAttribute( 'value' ))
+					if param.getAttribute( 'name' ) == 'CollisionEnergy':
+						collisionEnergy = float( param.getAttribute( 'value' ))
 
 
 
-		returnValue[ "scans" ].append({ 
-			"retentionTime" : rt,
-			"polarity" : polarity, 
-			"msLevel" : msLevel, 
-			"id" : scanId,
-			"lowMz" : lowMz,
-			"highMz" : highMz,
-			"parentScan" : parentScan,
-			"precursorMz" : precursorMz,
-			"collisionEnergy" : collisionEnergy,
-			"data" : zip( massValues, intensityValues )
-		})
+			self.data[ "scans" ].append({ 
+				"retentionTime" : rt,
+				"polarity" : polarity, 
+				"msLevel" : msLevel, 
+				"id" : scanId,
+				"lowMz" : lowMz,
+				"highMz" : highMz,
+				"parentScan" : parentScan,
+				"precursorMz" : precursorMz,
+				"collisionEnergy" : collisionEnergy,
+				"points" : list( zip( massValues, intensityValues ))
+			})
 
-	returnValue[ 'sourceFile' ] = sourceFile
+		return True
 
-	return returnValue
 
-def _unpackMzData( dataNode ):
-	"""
-	Internal function. Unpacks the scan data contained in a <data> node in mzdata 
-	format.
+	def _unpackMzData( self, dataNode ):
+		"""
+		Internal function. Unpacks the scan data contained in a <data> node in mzdata 
+		format.
 
-	:Parameters:
-		dataNode : xmlNode
-			The xml node containing the scan data to be unpacked.
+		:Parameters:
+			dataNode : xmlNode
+				The xml node containing the scan data to be unpacked.
 
-	"""
-	scanSize = int( dataNode.getAttribute( 'length' ))
-	if dataNode.getAttribute( 'endian' ) == 'little':
-		byteOrder = '<'
-	else:
-		byteOrder = '>'
-	if dataNode.getAttribute( 'precision' ) == '64':
-		dataType = 'd'
-	else: 
-		dataType = 'f'
-
-	return struct.unpack( byteOrder + ( dataType * scanSize ), 
-		b64decode( re.sub( "<.*?>", "", dataNode.toxml( ))))
-
-def readMzXml( filename ):
-	"""
-	Read a file in mzXML format.
-
-	:Parameters:
-		filename : str
-			The name of the file to load.
-
-	"""
-	returnValue = { "scans" : [] }
-	dataFile = parse( filename )
-	scans = dataFile.getElementsByTagName( 'scan' )
-	for scan in scans:
-		collisionEnergy = None
-		precursorMz = None
-		msLevel = int( scan.getAttribute( "msLevel" ))
-		scanSize = int( scan.getAttribute( 'peaksCount' ))
-		rt = float( scan.getAttribute( 'retentionTime' )[ 2:-1 ] ) / 60
-		scanId = int( scan.getAttribute( 'num' ))
-		lowMz = float( scan.getAttribute( 'lowMz' ))
-		highMz = float( scan.getAttribute( 'highMz' ))
-		if ( scan.getAttribute( 'polarity' ) == '+' ):
-			polarity = 1
+		"""
+		scanSize = int( dataNode.getAttribute( 'length' ))
+		if dataNode.getAttribute( 'endian' ) == 'little':
+			byteOrder = '<'
 		else:
-			polarity = -1
-		if msLevel == 1:
-			parentScan = None
-		else:
-			parentScan = int( scan.parentNode.getAttribute( 'num' ))
-			if ( scan.getAttribute( 'collisionEnergy' )):
-				collisionEnergy = float( scan.getAttribute( 'collisionEnergy' ))
-			precursorTags = scan.getElementsByTagName( 'precursorMz' )
-			if ( len( precursorTags )):
-				precursorMz = float( re.sub( r"<.*?>", "", precursorTags[ 0 ].toxml( )).strip( ))
-		
-
-		peaks = scan.firstChild
-		while not ( peaks.nodeType == peaks.ELEMENT_NODE and peaks.tagName == 'peaks' ):
-			peaks = peaks.nextSibling
-
-		if peaks.getAttribute( 'precision' ) == '64':
-			type = 'd'
+			byteOrder = '>'
+		if dataNode.getAttribute( 'precision' ) == '64':
+			dataType = 'd'
 		else: 
-			type='f'
-		byteOrder = '>'
+			dataType = 'f'
 
-		# get all of the text (non-tag) content of peaks
-		packedData = re.sub( r"<.*?>", "", peaks.toxml( )).strip( )
-		if ( peaks.getAttribute( 'compressionType' ) == 'zlib' ):
-			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), zlib.decompress( b64decode( packedData )))
-		else:
-			data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ))
-		massValues = data[ 0::2 ]
-		intensityValues = data[ 1::2 ] 
+		return struct.unpack( byteOrder + ( dataType * scanSize ), 
+			b64decode( re.sub( "<.*?>", "", dataNode.toxml( ))))
 
-		returnValue[ "scans" ].append({ 
-			"retentionTime" : rt,
-			"polarity" : polarity, 
-			"msLevel" : msLevel, 
-			"id" : scanId,
-			"lowMz" : lowMz,
-			"highMz" : highMz,
-			"parentScan" : parentScan,
-			"precursorMz" : precursorMz,
-			"collisionEnergy" : collisionEnergy,
-			"data" : zip( massValues, intensityValues )
-		})
+	def readMzXml( self, filename ):
+		"""
+		Read a file in mzXML format.
 
-	return returnValue
+		:Parameters:
+			filename : str
+				The name of the file to load.
 
-def readMzml( filename ):
-	pass
-	
+		"""
+		self.data = { "scans" : [] }
+		dataFile = parse( filename )
+		scans = dataFile.getElementsByTagName( 'scan' )
+		for scan in scans:
+			collisionEnergy = None
+			precursorMz = None
+			msLevel = int( scan.getAttribute( "msLevel" ))
+			scanSize = int( scan.getAttribute( 'peaksCount' ))
+			rt = float( scan.getAttribute( 'retentionTime' )[ 2:-1 ] ) / 60
+			scanId = int( scan.getAttribute( 'num' ))
+			lowMz = float( scan.getAttribute( 'lowMz' ))
+			highMz = float( scan.getAttribute( 'highMz' ))
+			if ( scan.getAttribute( 'polarity' ) == '+' ):
+				polarity = 1
+			else:
+				polarity = -1
+			if msLevel == 1:
+				parentScan = None
+			else:
+				parentScan = int( scan.parentNode.getAttribute( 'num' ))
+				if ( scan.getAttribute( 'collisionEnergy' )):
+					collisionEnergy = float( scan.getAttribute( 'collisionEnergy' ))
+				precursorTags = scan.getElementsByTagName( 'precursorMz' )
+				if ( len( precursorTags )):
+					precursorMz = float( re.sub( r"<.*?>", "", precursorTags[ 0 ].toxml( )).strip( ))
+			
 
-def _getChildNode( node, child ):
-	"""
-	Internal function. Finds the child node of the passed in xml node with the 
-	given tag name.
+			peaks = scan.firstChild
+			while not ( peaks.nodeType == peaks.ELEMENT_NODE and peaks.tagName == 'peaks' ):
+				peaks = peaks.nextSibling
 
-	:Parameters:
-		node : minidom node
-			A minidom node object
-		child : str
-			A string containing the tag name of the child node to return.
+			if peaks.getAttribute( 'precision' ) == '64':
+				type = 'd'
+			else: 
+				type='f'
+			byteOrder = '>'
+
+			# get all of the text (non-tag) content of peaks
+			packedData = re.sub( r"<.*?>", "", peaks.toxml( )).strip( )
+			if ( peaks.getAttribute( 'compressionType' ) == 'zlib' ):
+				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), zlib.decompress( b64decode( packedData )))
+			else:
+				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ))
+			massValues = data[ 0::2 ]
+			intensityValues = data[ 1::2 ] 
+
+			self.data[ "scans" ].append({ 
+				"retentionTime" : rt,
+				"polarity" : polarity, 
+				"msLevel" : msLevel, 
+				"id" : scanId,
+				"lowMz" : lowMz,
+				"highMz" : highMz,
+				"parentScan" : parentScan,
+				"precursorMz" : precursorMz,
+				"collisionEnergy" : collisionEnergy,
+				"points" : list( zip( massValues, intensityValues ))
+			})
+		return True
+
+
+	def readMzMl( self, filename ):
+		pass
 		
 
-	rtype: minidom node
-	return: The requested child of the minidom node.
-	"""
-	returnValue = node.firstChild
-	while returnValue and not ( 
-		returnValue.nodeType == returnValue.ELEMENT_NODE and 
-		returnValue.tagName == child ):
+	def _getChildNode( self, node, child ):
+		"""
+		Internal function. Finds the child node of the passed in xml node with the 
+		given tag name.
 
-		returnValue = returnValue.nextSibling
-	return returnValue
+		:Parameters:
+			node : minidom node
+				A minidom node object
+			child : str
+				A string containing the tag name of the child node to return.
 
-def removeScans( mzData, minTime=0, maxTime=sys.maxint ):
-	"""
-	:Parameters:
-		mzData : dict
-			A dictionary object containing scan data, normally returned from 
-			Parser.read( )
-		minTime : float
-			The minimum retention time for the scans to remove
-		maxTime : float
-			The maximum retention time for the scans to remove
+		rtype: minidom node
+		return: The requested child of the minidom node.
+		"""
+		returnvalue = node.firstChild
+		while returnvalue and not ( 
+			returnvalue.nodeType == returnvalue.ELEMENT_NODE and 
+			returnvalue.tagName == child ):
 
-	rtype: dict
-	return: The data after filtering is applied.
-	"""
-	if minTime > maxTime:
-		return mzData
-	mzData[ 'scans' ] = [ scan for scan in mzData['scans'] if 
-	                      scan[ 'retentionTime' ] < minTime or 
-	                      scan[ 'retentionTime' ] > maxTime ]
-	return mzData
+			returnvalue = returnvalue.nextSibling
+		return returnvalue
 
-def removeMass( mzData, mz, tolerance ):
-	"""
-	:Parameters:
-		mzData : dict
-			A dictionary object containing scan data, normally returned from 
-			Parser.read( )
-		mz : float
-			The m/z value of the mass to be removed from all scans.
-		tolerance : float
-			The tolerance to use for determining if the data point should be removed.
+	def removeScans( self, minTime=0, maxTime=sys.maxint ):
+		"""
+		Discards all scans in the given time range.
 
-	rtype: dict
-	return: The data after filtering is applied.
-	"""
-	for scan in mzData[ 'scans' ]:
-		scan[ 'data' ] = [ point for point in scan[ 'data' ] if 
-		                   point[ 0 ] < mz - tolerance or
-		                   point[ 0 ] > mz + tolerance ]
-	return mzData
+		:Parameters:
+			minTime : float
+				The minimum retention time for the scans to remove
+			maxTime : float
+				The maximum retention time for the scans to remove
+		"""
+		if minTime < maxTime:
+			self.data[ 'scans' ] = [ scan for scan in self.data['scans'] if 
+			                           scan[ 'retentionTime' ] < minTime or 
+			                           scan[ 'retentionTime' ] > maxTime ]
 
-def writeCsv( mzData, filename ):
-	"""
-	:Parameters:
-		mzData : dict
-			A dictionary object containing scan data, normally returned from
-			Parser.read( )
-		filename : string
-			The name of the file to write to.
+	def keepScans( self, minTime=0, maxTime=sys.maxint ):
+		"""
+		Keeps only the scans specified in the time range, discarding all others.
 
-	rtype: bool
-	return: True if the write succeeded
-	"""
-	out = open( filename, 'w' )
-	out.write( "[data source]\n" )
-	out.write( "file name,%s\n" % mzData[ 'sourceFile' ] )
-	out.write( "[filters]\n" )
-	out.write( "number of spectra,%d\n" % len( mzData['scans'] ))
-	out.write( "[format]\n" )
-	out.write( "retention time, sample, period, experiment, polarity, scan type, points, x1, y1, x2, y2, ...\n" )
-	out.write( "[spectra]\n" )
-	for scan in mzData[ 'scans' ]:
-		if ( scan[ 'polarity' ] > 0 ):
-			polarity = '+'
-		else:
-			polairty = '-'
-		out.write( "%.4f,%d,%d,%d,%s,%s,%d" % 
-		          ( scan[ 'retentionTime' ], 1, 1, 1, polarity, "peak", 
-							len( scan[ 'data' ])))
-		for point in scan[ 'data' ]:
-			out.write( ',%f,%d' % point )
-		out.write( "\n" )
-	out.close( )
-		
-def writeMzData( mzData, filename ):
-	pass
+		:Parameters:
+			minTime : float
+				The minimum retention time for the scans to remove
+			maxTime : float
+				The maximum retention time for the scans to remove
+		"""
+		if minTime < maxTime:
+			self.data[ 'scans' ] = [ scan for scan in self.data['scans'] if 
+			                           scan[ 'retentionTime' ] > minTime and
+			                           scan[ 'retentionTime' ] < maxTime ]
 
-def writeMzXML( mzData, filename ):
-	pass
+	def removeMz( self,  mz, tolerance=0.1 ):
+		"""
+		Discards all data points with the specified mass +/- the specified tolerance
 
-def writeMzML( mzData, filename ):
-	pass
+		:Parameters:
+			mz : float
+				The m/z value of the mass to be removed from all scans.
+			tolerance : float
+				The tolerance to use for determining if the data point should be removed.
+				Defaults to 0.1.
+		"""
+		for scan in self.data[ 'scans' ]:
+			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
+			                   point[ 0 ] < mz - tolerance or
+			                   point[ 0 ] > mz + tolerance ]
 
-def writeJson( mzData, filename ):
-	out = open( filename, 'w' )
-	json.dump( mzData, out )
-	out.close( )
+	def onlyMz( self, mz, tolerance=0.1 ):
+		"""
+		Keeps only data points with the specified mass +/- the specified tolerance,
+		discarding all others.
 
-def writeJsonGz( mzData, filename, compressionLevel=6 ):
-	out = open( filename, 'w' )
-	out.write( zlib.compress( json.dumps( mzData ), compressonLevel ))
-	out.close( )
+		:Parameters:
+			mz : float
+				The m/z value of the mass to be removed from all scans.
+			tolerance : float
+				The tolerance to use for determining if the data point should be removed.
+				Defaults to 0.1.
+		"""
+		for scan in self.data[ 'scans' ]:
+			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
+												 point[ 0 ] > mz - tolerance and
+												 point[ 0 ] < mz + tolerance ]
 
-#class RawData( object ):
-#	"""
-#	A class for reading and obtaining data from a mass spectrometry data file
-#
-#	"""
-#	def __init__( self, data=dict( )):
-#		object.__init__( self )
-#		self.data = data
-#
-#	def addScan( self, scan ):
-#		self.data[ 'scans' ].append( scan )
-#
-#	def getScans( self, level=None ):
-#		if not level:
-#			return self.scans
-#		returnvalue = list()
-#		for scan in self.scans:
-#			if scan[ 'mslevel' ] == level:
-#				returnvalue.append( scan )
-#		return returnvalue
-#
-#	def filterByTime( self, minTime=0, maxTime=0 ):
-#		"""
-#		Filters the data by retention time, removing any unwanted data
-#
-#		:Parameters:
-#			minTime : float
-#				The minimum retention time to keep in this Object.
-#			maxTime : float
-#				The maximum retention time to keep in this Object.
-#		"""
-#		if ( minTime or maxTime ):
-#			minIndex, maxIndex = ( 0, len( self.rt ) + 1 )			
-#			for i in xrange( len( self.rt )): 
-#				if ( self.rt[ i ] < minTime ):
-#					minIndex = i
-#				if ( maxTime and self.rt[ i ] > maxTime ):
-#					maxIndex = i
-#					break
-#			minIndex += 1
-#			self.rt = self.rt[ minIndex:maxIndex ]
-#			self.mass =  self.mass[ minIndex:maxIndex ]
-#			self.intensity = self.intensity[ minIndex:maxIndex ]
-#			self.firstIndex = i
-#
-#	def filterByMass( minMass=0, maxMass=0 ):
-#		"""
-#		Filters the data to keep only a certain mass range
-#		The data size is not changed, data which is not retained is zeroed.
-#
-#		:Parameters:
-#			minMass : float
-#				The minimum mass to retain.
-#			maxMass : float
-#				The maximum mass to retain.
-#		"""
-#		for scan in self.scans:
-#			for j in xrange( len( self.mass[ i ])):
-#				if ( self.mass[ i ][ j ] < minMass or self.mass[ i ][ j ] > maxMass ):
-#					self.mass[ i ][ j ] = 0
-#					self.intensity[ i ][ j ] = 0
-#
-#		return True 
-#
-#class Scan( object ):
-#	
-#	"""
-#	A class for holding data related to a single scan.
-#	"""
-#	def __init__( self, id=0, retentionTime=0, msLevel=1, polarity=1, lowMz=0, 
-#	              highMz=2200, data=list( ), parentScan=None, precursorMz=None, 
-#								collisionEnergy=None ):
-#		self.id = id
-#		self.retentionTime = retentionTime
-#		self.msLevel = msLevel
-#		self.polarity = polarity
-#		self.lowMz = lowMz
-#		self.highMz = highMz
-#		self.data = data
-#		self.parentScan = parentScan
-#		self.precursor = precursorMz
-#		self.collisionEnergy = collisionEnergy
-#
-#	def __iter__( self ):
-#		return self.points
-#
-#	def __lt__( self, scan ):
-#		return self.retentionTime < scan.retentionTime
-#	
-#	def __gt__( self, scan ):
-#		return self.retentionTime > scan.retentionTime
-#
-#	def __eq__( self, scan ):
-#		return self.retentionTime == scan.retentionTime
-#	
-#	def __le__( self, scan ):
-#		return self.retentionTime <= scan.retentionTime
-#
-#	def __ge__( self, scan ):
-#		return self.retentionTime >= scan.retentionTime
-#
-#	def __ne__( self, scan ):
-#		return self.retentionTime != scan.retentionTime
-#
-#	def addDataPoint( mz, intensity ):
-#		self.points.append(( mz, intensity ))
-#
-#	def filterMass( mass, window ):
-#		returnvalue = Scan( self.id, self.retentionTime, self.msLevel, self.polarity
-#		                    self.lowMz, self.highMz, list( ), self.parentScan, 
-#												self.precursorMz, self.collisionEnergy )
-#		for ( point in data ):
-#			if ( point[ 0 ] < mass - window or point[ 0 ] > mass + window ):
-#				returnvalue.data.append( point )
-#		return returnvalue
-#	
+
+	def writeCsv( self, filename ):
+		"""
+		:Parameters:
+			filename : string
+				The name of the file to write to.
+
+		rtype: bool
+		return: True if the write succeeded
+		"""
+		out = open( filename, 'w' )
+		out.write( "[data source]\n" )
+		out.write( "file name,%s\n" % self.data[ 'sourceFile' ] )
+		out.write( "[filters]\n" )
+		out.write( "mass range,%f,%f\n" % 
+						 ( min([ x[ 'lowMz' ] for x in self.data[ 'scans' ]]), 
+						 ( max([ x[ 'highMz' ] for x in self.data[ 'scans' ]]))))
+		rtList = [ x['retentionTime']  for x in self.data['scans']]
+		out.write( "time range,%f,%f\n" % ( min( rtList ), max( rtList )))
+		out.write( "number of spectra,%d\n" % len( self.data['scans'] ))
+		out.write( "[format]\n" )
+		out.write( "retention time, sample, period, experiment, polarity, scan type, points, x1, y1, x2, y2, ...\n" )
+		out.write( "[spectra]\n" )
+		level2 = False
+		for scan in self.data[ 'scans' ]:
+			if ( scan[ 'msLevel' ] > 1 ):
+				if not level2:
+					print( "Agilent CSV format does not support multimensional data, ignoring scans with level > 1" )
+					level2 = True
+				continue
+
+			if ( scan[ 'polarity' ] > 0 ):
+				polarity = '+'
+			else:
+				polarity = '-'
+			out.write( "%f,%d,%d,%d,%s,%s,%d," % 
+								( scan[ 'retentionTime' ], 1, 1, 1, polarity, "peak", 
+								len( scan[ 'points' ])))
+			for point in scan[ 'points' ]:
+				out.write( '%f,%f,' % point )
+			out.write( "\n" )
+		out.close( )
+			
+	def writeMzData( self, filename ):
+		pass
+
+	def writeMzXML( self, filename ):
+		pass
+
+	def writeMzML( self, filename ):
+		pass
+
+	def writeJson( self, filename ):
+		"""
+		Dumps the data to a JSON array.
+		:Parameters:
+			maData : dict
+				A dictionary object containing scan data, normally returned from
+			filename : string
+				The name of the file to write to.
+		"""
+		out = open( filename, 'w' )
+		json.dump( self.data, out )
+		out.close( )
+
+	def writeJsonGz( self, filename, compressionLevel=6 ):
+		"""
+		Dumps the data to a JSON array, compressed with zlib.
+		:Parameters:
+			maData : dict
+				A dictionary object containing scan data, normally returned from
+			filename : string
+				The name of the file to write to.
+			compressionLevel : int
+				Compression level to use - 0 for least compression, 9 for most.
+				Defaults to 6.
+		"""
+		out = open( filename, 'w' )
+		out.write( zlib.compress( json.dumps( self.data ), compressonLevel ))
+		out.close( )
+
 
