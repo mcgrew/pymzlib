@@ -115,8 +115,8 @@ class RawData( object ):
 		"""
 		if minTime < maxTime:
 			self.data[ 'scans' ] = [ scan for scan in self.data['scans'] if 
-						scan[ 'retentionTime' ] <= minTime or 
-						scan[ 'retentionTime' ] > maxTime ]
+						scan[ 'retentionTime' ] < minTime or 
+						scan[ 'retentionTime' ] >= maxTime ]
 
 	def keepScans( self, minTime=0, maxTime=sys.maxint ):
 		"""
@@ -146,8 +146,8 @@ class RawData( object ):
 		"""
 		for scan in self.data[ 'scans' ]:
 			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
-						point[ 0 ] <= mz - tolerance or
-						point[ 0 ] > mz + tolerance ]
+						point[ 0 ] < mz - tolerance or
+						point[ 0 ] >= mz + tolerance ]
 
 	def onlyMz( self, mz, tolerance=0.1 ):
 		"""
