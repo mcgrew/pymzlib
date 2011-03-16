@@ -25,7 +25,7 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version alpha 2010.11.17
+	Version alpha 2011.03.15
 
 """
 import sys
@@ -42,20 +42,16 @@ from copy import deepcopy
 class RawData( object ):
 
 	def __init__( self, _input=None ):
-		if _input:
-			if type( _input ) == RawData:
-				# copy the passed in object
-				self.data = deepcopy( _input.data )
+		if type( _input ) == RawData:
+			# copy the passed in object
+			self.data = deepcopy( _input.data )
 
-			elif type( _input ) == str:
-				# read the passed in file name
-				self.read( _input )
+		elif type( _input ) == str:
+			# read the passed in file name
+			self.read( _input )
 
 		else:
 			self.data = { 'scans' : [] }
-
-	def getData( self ):
-		return self.data
 
 	def getScan( self, retentionTime ):
 		"""
@@ -71,7 +67,7 @@ class RawData( object ):
 		difference = 1048576
 		returnvalue = None
 		for scan in self.data[ 'scans' ]:
-			currentDifference = scan[ 'retentionTime' ] - retentionTime
+			currentDifference = abs( scan[ 'retentionTime' ] - retentionTime )
 			if currentDifference < difference:
 				difference = currentDifference
 				returnvalue = scan
@@ -96,16 +92,80 @@ class RawData( object ):
 			for scan in self.data[ 'scans' ]:
 				if scan['msLevel'] == 1:
 					returnvalue.append( sum([ x[1] for x in scan[ 'points' ] 
-														  if x[0] > start and x[0] < stop ]))
+								if x[0] >= start and x[0] < stop ]))
 		else:
 			for scan in self.data[ 'scans' ]:
 				if scan['msLevel'] == 1:
 					returnvalue.append( sum([ x[1] for x in scan[ 'points' ] 
-															if x[0] == value ]))
+								if x[0] == value ]))
 		return returnvalue
 
 	def __iter__( self ):
 		return iter( self.data['scans'] )
+
+	def removeScans( self, minTime=0, maxTime=sys.maxint ):
+		"""
+		Discards all scans in the given time range.
+
+		:Parameters:
+			minTime : float
+				The minimum retention time for the scans to remove
+			maxTime : float
+				The maximum retention time for the scans to remove
+		"""
+		if minTime < maxTime:
+			self.data[ 'scans' ] = [ scan for scan in self.data['scans'] if 
+						scan[ 'retentionTime' ] <= minTime or 
+						scan[ 'retentionTime' ] > maxTime ]
+
+	def keepScans( self, minTime=0, maxTime=sys.maxint ):
+		"""
+		Keeps only the scans specified in the time range, discarding all others.
+
+		:Parameters:
+			minTime : float
+				The minimum retention time for the scans to remove
+			maxTime : float
+				The maximum retention time for the scans to remove
+		"""
+		if minTime < maxTime:
+			self.data[ 'scans' ] = [ scan for scan in self.data['scans'] if 
+					scan[ 'retentionTime' ] >= minTime and
+					scan[ 'retentionTime' ] < maxTime ]
+
+	def removeMz( self,  mz, tolerance=0.1 ):
+		"""
+		Discards all data points with the specified m/z +/- the specified tolerance
+
+		:Parameters:
+			mz : float
+				The m/z value of the mass to be removed from all scans.
+			tolerance : float
+				The tolerance to use for determining if the data point should be removed.
+				Defaults to 0.1.
+		"""
+		for scan in self.data[ 'scans' ]:
+			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
+						point[ 0 ] <= mz - tolerance or
+						point[ 0 ] > mz + tolerance ]
+
+	def onlyMz( self, mz, tolerance=0.1 ):
+		"""
+		Keeps only data points with the specified m/z +/- the specified tolerance,
+		discarding all others.
+
+		:Parameters:
+			mz : float
+				The m/z value of the mass to be removed from all scans.
+			tolerance : float
+				The tolerance to use for determining if the data point should be removed.
+				Defaults to 0.1.
+		"""
+		for scan in self.data[ 'scans' ]:
+			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
+						point[ 0 ] >= mz - tolerance and
+						point[ 0 ] < mz + tolerance ]
+
 
 
 	def read( self, filename ):
@@ -385,70 +445,6 @@ class RawData( object ):
 
 			returnvalue = returnvalue.nextSibling
 		return returnvalue
-
-	def removeScans( self, minTime=0, maxTime=sys.maxint ):
-		"""
-		Discards all scans in the given time range.
-
-		:Parameters:
-			minTime : float
-				The minimum retention time for the scans to remove
-			maxTime : float
-				The maximum retention time for the scans to remove
-		"""
-		if minTime < maxTime:
-			self.data[ 'scans' ] = [ scan for scan in self.data['scans'] if 
-			                           scan[ 'retentionTime' ] < minTime or 
-			                           scan[ 'retentionTime' ] > maxTime ]
-
-	def keepScans( self, minTime=0, maxTime=sys.maxint ):
-		"""
-		Keeps only the scans specified in the time range, discarding all others.
-
-		:Parameters:
-			minTime : float
-				The minimum retention time for the scans to remove
-			maxTime : float
-				The maximum retention time for the scans to remove
-		"""
-		if minTime < maxTime:
-			self.data[ 'scans' ] = [ scan for scan in self.data['scans'] if 
-			                           scan[ 'retentionTime' ] > minTime and
-			                           scan[ 'retentionTime' ] < maxTime ]
-
-	def removeMz( self,  mz, tolerance=0.1 ):
-		"""
-		Discards all data points with the specified mass +/- the specified tolerance
-
-		:Parameters:
-			mz : float
-				The m/z value of the mass to be removed from all scans.
-			tolerance : float
-				The tolerance to use for determining if the data point should be removed.
-				Defaults to 0.1.
-		"""
-		for scan in self.data[ 'scans' ]:
-			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
-			                   point[ 0 ] < mz - tolerance or
-			                   point[ 0 ] > mz + tolerance ]
-
-	def onlyMz( self, mz, tolerance=0.1 ):
-		"""
-		Keeps only data points with the specified mass +/- the specified tolerance,
-		discarding all others.
-
-		:Parameters:
-			mz : float
-				The m/z value of the mass to be removed from all scans.
-			tolerance : float
-				The tolerance to use for determining if the data point should be removed.
-				Defaults to 0.1.
-		"""
-		for scan in self.data[ 'scans' ]:
-			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
-												 point[ 0 ] > mz - tolerance and
-												 point[ 0 ] < mz + tolerance ]
-
 
 	def writeCsv( self, filename ):
 		"""
