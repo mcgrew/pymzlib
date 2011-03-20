@@ -36,8 +36,10 @@ from base64 import b64decode
 import types
 import re
 import zlib
+import gzip
 import json
 from copy import deepcopy
+from collections import defaultdict
 
 class RawData( object ):
 
@@ -190,11 +192,18 @@ class RawData( object ):
 		if ( fileExt.lower( ) == "csv" ):
 			return self.readCsv( filename )
 
-		elif ( fileExt.lower( ) == "mzdata" ):
+		elif ( fileExt.lower( ) in ( "mzdata" , "xml" )):
 			return self.readMzData( filename )
 
 		elif ( fileExt.lower( ) == "mzxml" ):
 			return self.readMzXml( filename )
+
+		elif ( fileExt.lower( ) == "json" ):
+			return self.readJson( filename )
+
+		elif ( filename.endswith( ".json.gz" )):
+			return self.readJsonGz( filename )
+
 		else:
 			sys.stderr.write( "Unrecognized file type for %s\n" % filename )
 			return False
@@ -247,8 +256,7 @@ class RawData( object ):
 				"polarity" : polarity, 
 				"msLevel" : 1,
 				"id" : scanId,
-				"lowMz" : min( massValues ),
-				"highMz" : max( massValues ),
+				"mzRange" : [ min( massValues ), max( massValues ) ],
 				"parentScan" : None,
 				"precursorMz" : None,
 				"collisionEnergy" : None,
@@ -316,8 +324,7 @@ class RawData( object ):
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
 				"id" : scanId,
-				"lowMz" : lowMz,
-				"highMz" : highMz,
+				"mzRange" : [ lowMz, highMz ],
 				"parentScan" : parentScan,
 				"precursorMz" : precursorMz,
 				"collisionEnergy" : collisionEnergy,
@@ -410,8 +417,7 @@ class RawData( object ):
 				"polarity" : polarity, 
 				"msLevel" : msLevel, 
 				"id" : scanId,
-				"lowMz" : lowMz,
-				"highMz" : highMz,
+				"mzRange" : [ lowMz, highMz ],
 				"parentScan" : parentScan,
 				"precursorMz" : precursorMz,
 				"collisionEnergy" : collisionEnergy,
@@ -446,6 +452,34 @@ class RawData( object ):
 			returnvalue = returnvalue.nextSibling
 		return returnvalue
 
+	def readJson( self, filename ):
+		"""
+		Reads ms data from a file containing gzipped JSON data. No checks are done, 
+		so make sure the data is of the same format as that produced by this 
+		library, otherwise, unpredictable things may happen.
+		:Parameters:
+			filename : string
+				The name of a file containing gzip compressed JSON data
+		"""
+		in_ = open( filename )
+		self.data = json.load( in_ )
+		in_.close( )
+		return True
+
+	def readJsonGz( self, filename ):
+		"""
+		Reads ms data from a file containing gzipped JSON data. No checks are done, 
+		so make sure the data is of the same format as that produced by this 
+		library, otherwise, unpredictable things may happen.
+		:Parameters:
+			filename : string
+				The name of a file containing gzip compressed JSON data
+		"""
+		in_ = gzip.open( filename )
+		self.data = json.load( in_ )
+		in_.close( )
+		return True
+
 	def writeCsv( self, filename ):
 		"""
 		:Parameters:
@@ -460,8 +494,8 @@ class RawData( object ):
 		out.write( "file name,%s\n" % self.data[ 'sourceFile' ] )
 		out.write( "[filters]\n" )
 		out.write( "mass range,%f,%f\n" % 
-						 ( min([ x[ 'lowMz' ] for x in self.data[ 'scans' ]]), 
-						 ( max([ x[ 'highMz' ] for x in self.data[ 'scans' ]]))))
+						 ( min([ x[ 'mzRange' ][ 0 ] for x in self.data[ 'scans' ]]), 
+						 ( max([ x[ 'mzRange' ][ 1 ] for x in self.data[ 'scans' ]]))))
 		rtList = [ x['retentionTime']  for x in self.data['scans']]
 		out.write( "time range,%f,%f\n" % ( min( rtList ), max( rtList )))
 		out.write( "number of spectra,%d\n" % len( self.data['scans'] ))
@@ -497,7 +531,7 @@ class RawData( object ):
 	def writeMzML( self, filename ):
 		pass
 
-	def writeJson( self, filename ):
+	def writeJson( self, filename, indent=None ):
 		"""
 		Dumps the data to a JSON array.
 		:Parameters:
@@ -505,12 +539,19 @@ class RawData( object ):
 				A dictionary object containing scan data, normally returned from
 			filename : string
 				The name of the file to write to.
+			indent : int
+				Level to indent for pretty-printing, or None for no pretty-print.
+				Defaults to None
 		"""
+		if( indent ):
+			sep = (', ',': ')
+		else:
+			sep = (',',':')
 		out = open( filename, 'w' )
-		json.dump( self.data, out )
+		json.dump( self.data, out, indent=indent, separators=sep )
 		out.close( )
 
-	def writeJsonGz( self, filename, compressionLevel=6 ):
+	def writeJsonGz( self, filename, indent=None, compressionLevel=6 ):
 		"""
 		Dumps the data to a JSON array, compressed with zlib.
 		:Parameters:
@@ -518,12 +559,19 @@ class RawData( object ):
 				A dictionary object containing scan data, normally returned from
 			filename : string
 				The name of the file to write to.
+			indent : int
+				Level to indent for pretty-printing, or None for no pretty-print.
+				Defaults to None
 			compressionLevel : int
 				Compression level to use - 0 for least compression, 9 for most.
 				Defaults to 6.
 		"""
-		out = open( filename, 'w' )
-		out.write( zlib.compress( json.dumps( self.data ), compressonLevel ))
+		if( indent ):
+			sep = (', ',': ')
+		else:
+			sep = (',',':')
+		out = gzip.open( filename, 'wb', compressionLevel )
+		out.write( json.dumps( self.data, indent=indent, separators=sep))
 		out.close( )
 
 
