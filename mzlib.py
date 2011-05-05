@@ -37,9 +37,14 @@ import types
 import re
 import zlib
 import gzip
-import json
 from copy import deepcopy
-from collections import defaultdict
+try: 
+	import json
+except ImportError:
+	try:
+		import simplejson as json
+	except:
+		json = False
 
 class RawData( object ):
 
@@ -88,8 +93,14 @@ class RawData( object ):
 		"""
 		returnvalue = []
 		if type( value ) == slice:
-			start = value.start if value.start else 0
-			stop = value.stop if value.stop else 1048576
+			if ( value.start ):
+				start = value.start 
+			else:
+				start = 0
+			if ( value.stop ):
+				stop = value.stop 
+			else:
+				value.stop = 1048576
 			
 			for scan in self.data[ 'scans' ]:
 				if scan['msLevel'] == 1:
@@ -456,11 +467,14 @@ class RawData( object ):
 		"""
 		Reads ms data from a file containing gzipped JSON data. No checks are done, 
 		so make sure the data is of the same format as that produced by this 
-		library, otherwise, unpredictable things may happen.
+		library, otherwise, unpredictable things may happen. This method may not be
+		supported on versions of python prior to 2.5.
 		:Parameters:
 			filename : string
 				The name of a file containing gzip compressed JSON data
 		"""
+		if not json:
+			raise NotImplementedError( "This method is not supported in your version of Python" )
 		in_ = open( filename )
 		self.data = json.load( in_ )
 		in_.close( )
@@ -470,11 +484,14 @@ class RawData( object ):
 		"""
 		Reads ms data from a file containing gzipped JSON data. No checks are done, 
 		so make sure the data is of the same format as that produced by this 
-		library, otherwise, unpredictable things may happen.
+		library, otherwise, unpredictable things may happen. This method may not be
+		supported on versions of python prior to 2.5.
 		:Parameters:
 			filename : string
 				The name of a file containing gzip compressed JSON data
 		"""
+		if not json:
+			raise NotImplementedError( "This method is not supported in your version of Python" )
 		in_ = gzip.open( filename )
 		self.data = json.load( in_ )
 		in_.close( )
@@ -543,6 +560,8 @@ class RawData( object ):
 				Level to indent for pretty-printing, or None for no pretty-print.
 				Defaults to None
 		"""
+		if not json:
+			raise NotImplementedError( "This method is not supported in your version of Python" )
 		if( indent ):
 			sep = (', ',': ')
 		else:
