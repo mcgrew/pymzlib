@@ -100,18 +100,10 @@ class RawData( object ):
 			if ( value.stop ):
 				stop = value.stop 
 			else:
-				value.stop = 1048576
-			
-			for scan in self.data[ 'scans' ]:
-				if scan['msLevel'] == 1:
-					returnvalue.append( sum([ x[1] for x in scan[ 'points' ] 
-								if x[0] >= start and x[0] < stop ]))
+				stop = 1048576
+			return self.sic( start, stop, 1 )
 		else:
-			for scan in self.data[ 'scans' ]:
-				if scan['msLevel'] == 1:
-					returnvalue.append( sum([ x[1] for x in scan[ 'points' ] 
-								if x[0] == value ]))
-		return returnvalue
+			return self.sic( value - 0.1, value + 0.1, 1 )
 
 	def __iter__( self ):
 		return iter( self.data['scans'] )
@@ -179,6 +171,61 @@ class RawData( object ):
 						point[ 0 ] >= mz - tolerance and
 						point[ 0 ] < mz + tolerance ]
 
+	def sic( self, start=0, stop=1048576, level=1 ):
+		"""
+		Returns a list indicating the selected intensity for each scan in order. 
+		:Parameters:
+			start : float
+				The m/z indices to retrieve intensity values higher than or equal to.
+			stop : float
+				The m/z indecies to retrieve intensity values less than.
+			level : int
+				The msLevel of the scans to get intensity values for. A value of 0 
+				uses all scans.
+
+		rtype: list
+		return: A list of intensity values.
+		"""
+		returnvalue = []
+		for scan in self.data[ 'scans' ]:
+			if not level or ( scan[ 'msLevel' ] == level ):
+				returnvalue.append( sum([ int_ for mz,int_ in scan[ 'points' ] 
+							if mz >= start and mz < stop ]))
+		return returnvalue
+
+	def tic( self, level=1 ):
+		"""
+		Returns a list indicating the total intensity for each scan in order. 
+		:Parameters:
+			level : int
+				The msLevel of the scans to get intensity values for. A value of 0 
+				uses all scans.
+
+		rtype: list
+		return: A list of intensity values.
+		"""
+		returnvalue = []
+		for scan in self.data[ 'scans' ]:
+			if not level or ( scan[ 'msLevel' ] == level ):
+				returnvalue.append( sum([ int_ for mz,int_ in scan[ 'points' ]]))
+		return returnvalue
+
+	def bpc( self, level=1 ):
+		"""
+		Returns a list indicating the base intensity for each scan in order. 
+		:Parameters:
+			level : int
+				The msLevel of the scans to get intensity values for. A value of 0
+				uses all scans
+
+		rtype: list
+		return: A list of intensity values.
+		"""
+		returnvalue = []
+		for scan in self.data[ 'scans' ]:
+			if not level or ( scan[ 'msLevel' ] == level ):
+				returnvalue.append( max([ int_ for mz,int_ in scan[ 'points' ]]))
+		return returnvalue
 
 
 	def read( self, filename ):
