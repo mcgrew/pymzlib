@@ -1,7 +1,7 @@
 """
 Copyright: 2010 Thomas McGrew
 
-License: MIT license.
+License: X11 license.
 
 	Permission is hereby granted, free of charge, to any person
 	obtaining a copy of this software and associated documentation
