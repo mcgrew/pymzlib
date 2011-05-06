@@ -25,7 +25,7 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version alpha 2011.03.15
+	Version alpha 2011.05.06
 
 """
 import sys
@@ -150,9 +150,10 @@ class RawData( object ):
 				Defaults to 0.1.
 		"""
 		for scan in self.data[ 'scans' ]:
-			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
-						point[ 0 ] < mz - tolerance or
-						point[ 0 ] >= mz + tolerance ]
+			scan[ 'points' ], scan[ 'intensityArray' ] = list( zip( 
+			      *[ point for point in zip( scan[ 'mzArray' ], scan[ 'intensityArray' ]) 
+						if point[ 0 ] < mz - tolerance or
+						point[ 0 ] >= mz + tolerance ]))
 
 	def onlyMz( self, mz, tolerance=0.1 ):
 		"""
@@ -167,9 +168,10 @@ class RawData( object ):
 				Defaults to 0.1.
 		"""
 		for scan in self.data[ 'scans' ]:
-			scan[ 'points' ] = [ point for point in scan[ 'points' ] if 
-						point[ 0 ] >= mz - tolerance and
-						point[ 0 ] < mz + tolerance ]
+			scan[ 'points' ], scan[ 'intensityArray' ] = list( zip( 
+			      *[ point for point in zip( scan[ 'mzArray' ], scan[ 'intensityArray' ]) 
+						if point[ 0 ] >= mz - tolerance and
+						point[ 0 ] < mz + tolerance ]))
 
 	def sic( self, start=0, stop=1048576, level=1 ):
 		"""
@@ -189,7 +191,8 @@ class RawData( object ):
 		returnvalue = []
 		for scan in self.data[ 'scans' ]:
 			if not level or ( scan[ 'msLevel' ] == level ):
-				returnvalue.append( sum([ int_ for mz,int_ in scan[ 'points' ] 
+				returnvalue.append( sum([ int_ for mz,int_ in 
+				      zip( scan[ 'mzArray' ], scan[ 'intensityArray' ])
 							if mz >= start and mz < stop ]))
 		return returnvalue
 
@@ -204,11 +207,8 @@ class RawData( object ):
 		rtype: list
 		return: A list of intensity values.
 		"""
-		returnvalue = []
-		for scan in self.data[ 'scans' ]:
-			if not level or ( scan[ 'msLevel' ] == level ):
-				returnvalue.append( sum([ int_ for mz,int_ in scan[ 'points' ]]))
-		return returnvalue
+		return [ sum( scan[ 'intensityArray' ]) for scan in self.data[ 'scans' ]]
+#		         if ( level or ( scan[ 'msLevel' ] == level ))]
 
 	def bpc( self, level=1 ):
 		"""
@@ -221,11 +221,8 @@ class RawData( object ):
 		rtype: list
 		return: A list of intensity values.
 		"""
-		returnvalue = []
-		for scan in self.data[ 'scans' ]:
-			if not level or ( scan[ 'msLevel' ] == level ):
-				returnvalue.append( max([ int_ for mz,int_ in scan[ 'points' ]]))
-		return returnvalue
+		return [ max( scan[ 'intensityArray' ]) for scan in self.data[ 'scans' ] 
+		         if ( level or ( scan[ 'msLevel' ] == level ))]
 
 
 	def read( self, filename ):
@@ -242,24 +239,22 @@ class RawData( object ):
 		if not os.path.exists( filename ):
 			raise IOError( "The file %s does not exist or is not readable" % filename )
 
-		try:
-			fileExt = filename[ filename.rindex( '.' )+1: ]
-		except ValueError:
-			return False
-
-		if ( fileExt.lower( ) == "csv" ):
+		if filename.lower( ).endswith( ".csv" ):
 			return self.readCsv( filename )
 
-		elif ( fileExt.lower( ) in ( "mzdata" , "xml" )):
+		elif filename.lower( ).endswith( ".mzdata" ) or filename.endswith(  ".mzdata.xml" ):
 			return self.readMzData( filename )
 
-		elif ( fileExt.lower( ) == "mzxml" ):
+		elif filename.lower( ).endswith( ".mzxml" ):
 			return self.readMzXml( filename )
 
-		elif ( fileExt.lower( ) == "json" ):
+		elif filename.lower( ).endswith( ".mzml" ):
+			return self.readMzMl( filename )
+
+		elif filename.lower( ).endswith( ".json" ):
 			return self.readJson( filename )
 
-		elif ( filename.endswith( ".json.gz" )):
+		elif filename.lower( ).endswith( ".json.gz" ):
 			return self.readJsonGz( filename )
 
 		else:
@@ -318,7 +313,8 @@ class RawData( object ):
 				"parentScan" : None,
 				"precursorMz" : None,
 				"collisionEnergy" : None,
-				"points" : list( zip( massValues, intensityValues ))
+				"mzArray" : massValues,
+				"intensityArray" : intensityValues
 			})
 		return True
 
@@ -386,7 +382,8 @@ class RawData( object ):
 				"parentScan" : parentScan,
 				"precursorMz" : precursorMz,
 				"collisionEnergy" : collisionEnergy,
-				"points" : list( zip( massValues, intensityValues ))
+				"mzArray" : list( massValues ),
+				"intensityArray" : list( intensityValues )
 			})
 
 		return True
@@ -479,13 +476,15 @@ class RawData( object ):
 				"parentScan" : parentScan,
 				"precursorMz" : precursorMz,
 				"collisionEnergy" : collisionEnergy,
-				"points" : list( zip( massValues, intensityValues ))
+				"mzArray" : list( massValues ),
+				"intensityArray" : list( intensityValues )
 			})
 		return True
 
 
 	def readMzMl( self, filename ):
-		pass
+		raise NotImplementedError( 
+			"Reading from this file type has not yet been implemented." )
 		
 
 	def _getChildNode( self, node, child ):
@@ -544,6 +543,40 @@ class RawData( object ):
 		in_.close( )
 		return True
 
+	def write( self, filename ):
+		"""
+		Load a file into this reference. This method will automatically detect the
+		file type based on the file extension.
+
+		:Parameters:
+			filename : str
+				The name of the file to load.
+
+		"""
+	
+		if filename.lower( ).endswith( ".csv" ):
+			return self.writeCsv( filename )
+
+		elif ( filename.lower( ).endswith( ".mzdata" ) or 
+		       filename.lower( ).endswith(  ".mzdata.xml" )):
+			return self.writeMzData( filename )
+
+		elif filename.lower( ).endswith( ".mzxml" ):
+			return self.writeMzXml( filename )
+
+		elif filename.lower( ).endswith( ".mzml" ):
+			return self.writeMzMl( filename )
+
+		elif filename.lower( ).endswith( ".json" ):
+			return self.writeJson( filename )
+
+		elif filename.lower( ).endswith( ".json.gz" ):
+			return self.writeJsonGz( filename )
+
+		else:
+			sys.stderr.write( "Unrecognized file type for %s\n" % filename )
+			return False
+
 	def writeCsv( self, filename ):
 		"""
 		:Parameters:
@@ -580,20 +613,23 @@ class RawData( object ):
 				polarity = '-'
 			out.write( "%f,%d,%d,%d,%s,%s,%d," % 
 								( scan[ 'retentionTime' ], 1, 1, 1, polarity, "peak", 
-								len( scan[ 'points' ])))
-			for point in scan[ 'points' ]:
+								len( scan[ 'mzArray' ])))
+			for point in zip( scan[ 'mzArray' ], scan[ 'intensityArray' ]):
 				out.write( '%f,%f,' % point )
 			out.write( "\n" )
 		out.close( )
 			
 	def writeMzData( self, filename ):
-		pass
+		raise NotImplementedError( 
+			"Writing to this file type has not yet been implemented." )
 
 	def writeMzXML( self, filename ):
-		pass
+		raise NotImplementedError( 
+			"Writing to this file type has not yet been implemented." )
 
 	def writeMzML( self, filename ):
-		pass
+		raise NotImplementedError( 
+			"Writing to this file type has not yet been implemented." )
 
 	def writeJson( self, filename, indent=None ):
 		"""
