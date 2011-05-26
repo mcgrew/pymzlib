@@ -1,7 +1,7 @@
 """
 Copyright: 2010 Thomas McGrew
 
-License: X11 license.
+License: MIT license.
 
 	Permission is hereby granted, free of charge, to any person
 	obtaining a copy of this software and associated documentation
@@ -25,7 +25,7 @@ License: X11 license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version alpha 2011.05.06
+	Version alpha 2011.05.26
 
 """
 import sys
@@ -33,7 +33,6 @@ import os
 from xml.dom.minidom import parse
 import struct
 from base64 import b64decode
-import types
 import re
 import zlib
 import gzip
@@ -123,7 +122,7 @@ class RawData( object ):
 						scan[ 'retentionTime' ] < minTime or 
 						scan[ 'retentionTime' ] >= maxTime ]
 
-	def keepScans( self, minTime=0, maxTime=sys.maxint ):
+	def onlyScans( self, minTime=0, maxTime=sys.maxint ):
 		"""
 		Keeps only the scans specified in the time range, discarding all others.
 
@@ -150,10 +149,14 @@ class RawData( object ):
 				Defaults to 0.1.
 		"""
 		for scan in self.data[ 'scans' ]:
-			scan[ 'points' ], scan[ 'intensityArray' ] = list( zip( 
-			      *[ point for point in zip( scan[ 'mzArray' ], scan[ 'intensityArray' ]) 
-						if point[ 0 ] < mz - tolerance or
-						point[ 0 ] >= mz + tolerance ]))
+			try:
+				scan[ 'mzArray' ], scan[ 'intensityArray' ] = list( zip( 
+							*[ point for point in zip( scan[ 'mzArray' ], scan[ 'intensityArray' ]) 
+							if point[ 0 ] < mz - tolerance or
+							point[ 0 ] >= mz + tolerance ]))
+			except ValueError:
+				scan[ 'mzArray' ] = []
+				scan[ 'intensityArray' ] = []
 
 	def onlyMz( self, mz, tolerance=0.1 ):
 		"""
@@ -162,16 +165,20 @@ class RawData( object ):
 
 		:Parameters:
 			mz : float
-				The m/z value of the mass to be removed from all scans.
+				The m/z value of the mass to be retained from all scans.
 			tolerance : float
 				The tolerance to use for determining if the data point should be removed.
 				Defaults to 0.1.
 		"""
 		for scan in self.data[ 'scans' ]:
-			scan[ 'points' ], scan[ 'intensityArray' ] = list( zip( 
-			      *[ point for point in zip( scan[ 'mzArray' ], scan[ 'intensityArray' ]) 
-						if point[ 0 ] >= mz - tolerance and
-						point[ 0 ] < mz + tolerance ]))
+			try:
+				scan[ 'mzArray' ], scan[ 'intensityArray' ] = list( zip( 
+							*[ point for point in zip( scan[ 'mzArray' ], scan[ 'intensityArray' ]) 
+							if point[ 0 ] >= mz - tolerance and
+							point[ 0 ] < mz + tolerance ]))
+			except ValueError:
+				scan[ 'mzArray' ] = []
+				scan[ 'intensityArray' ] = []
 
 	def sic( self, start=0, stop=1048576, level=1 ):
 		"""
@@ -207,8 +214,8 @@ class RawData( object ):
 		rtype: list
 		return: A list of intensity values.
 		"""
-		return [ sum( scan[ 'intensityArray' ]) for scan in self.data[ 'scans' ]]
-#		         if ( level or ( scan[ 'msLevel' ] == level ))]
+		return [ sum( scan[ 'intensityArray' ]) for scan in self.data[ 'scans' ]
+		         if ( not level or ( scan[ 'msLevel' ] == level ))]
 
 	def bpc( self, level=1 ):
 		"""
@@ -222,7 +229,7 @@ class RawData( object ):
 		return: A list of intensity values.
 		"""
 		return [ max( scan[ 'intensityArray' ]) for scan in self.data[ 'scans' ] 
-		         if ( level or ( scan[ 'msLevel' ] == level ))]
+		         if ( not level or ( scan[ 'msLevel' ] == level ))]
 
 
 	def read( self, filename ):
