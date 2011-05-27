@@ -430,6 +430,8 @@ class RawData( object ):
 		"""
 		self.data = { "scans" : [] }
 		dataFile = parse( filename )
+		self.data[ 'sourceFile' ] = dataFile.getElementsByTagName( 'parentFile' )[ 0 ].\
+			getAttribute( 'fileName' )
 		scans = dataFile.getElementsByTagName( 'scan' )
 		for scan in scans:
 			collisionEnergy = None
