@@ -25,7 +25,7 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version alpha 2011.05.26
+	Version alpha 2011.05.27
 
 """
 import sys
@@ -228,8 +228,18 @@ class RawData( object ):
 		rtype: list
 		return: A list of intensity values.
 		"""
-		return [ max( scan[ 'intensityArray' ]) for scan in self.data[ 'scans' ] 
-		         if ( not level or ( scan[ 'msLevel' ] == level ))]
+		try: 
+			return [ self.max_( scan[ 'intensityArray' ]) 
+			         for scan in self.data[ 'scans' ] 
+							 if ( not level or ( scan[ 'msLevel' ] == level ))]
+		except ValueError:
+			return 0;
+
+	def max_( self, sequence ):
+		if len( sequence ):
+			return max( sequence )
+		else:
+			return 0;
 
 
 	def read( self, filename ):
@@ -279,9 +289,9 @@ class RawData( object ):
 		"""
 		self.data = { "scans" : [] }
 		try:
-			f = open( filename )
+			f = open( filename, 'r' )
 			lines = f.readlines( )
-			f.close
+			f.close( )
 		except IOError:
 			sys.stderr.write( "Error: unable to read file '%s'\n" % filename )
 			return False
@@ -530,7 +540,7 @@ class RawData( object ):
 		"""
 		if not json:
 			raise NotImplementedError( "This method is not supported in your version of Python" )
-		in_ = open( filename )
+		in_ = open( filename, 'r' )
 		self.data = json.load( in_ )
 		in_.close( )
 		return True
@@ -547,7 +557,7 @@ class RawData( object ):
 		"""
 		if not json:
 			raise NotImplementedError( "This method is not supported in your version of Python" )
-		in_ = gzip.open( filename )
+		in_ = gzip.open( filename, 'r' )
 		self.data = json.load( in_ )
 		in_.close( )
 		return True
