@@ -417,6 +417,9 @@ class RawData( object ):
 
 		"""
 		scanSize = int( dataNode.getAttribute( 'length' ))
+		if not scanSize:
+			return []
+		# else
 		if dataNode.getAttribute( 'endian' ) == 'little':
 			byteOrder = '<'
 		else:
@@ -479,12 +482,16 @@ class RawData( object ):
 
 			# get all of the text (non-tag) content of peaks
 			packedData = re.sub( r"<.*?>", "", peaks.toxml( )).strip( )
-			if ( peaks.getAttribute( 'compressionType' ) == 'zlib' ):
-				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), zlib.decompress( b64decode( packedData )))
+			if not scanSize:
+				massValues = []
+				intensityValues = []
 			else:
-				data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ))
-			massValues = data[ 0::2 ]
-			intensityValues = data[ 1::2 ] 
+				if ( peaks.getAttribute( 'compressionType' ) == 'zlib' ):
+					data = struct.unpack( byteOrder + ( type * scanSize * 2 ), zlib.decompress( b64decode( packedData )))
+				else:
+					data = struct.unpack( byteOrder + ( type * scanSize * 2 ), b64decode( packedData ))
+				massValues = data[ 0::2 ]
+				intensityValues = data[ 1::2 ] 
 
 			self.data[ "scans" ].append({ 
 				"retentionTime" : rt,
