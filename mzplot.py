@@ -27,11 +27,9 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version beta 2011.05.26
-
 """
 
-VERSION = "0.2-beta-2011.05.26"
+VERSION = "0.2-beta-2011.06.10"
 
 import sys
 import os

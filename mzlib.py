@@ -25,7 +25,7 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version alpha 2011.05.27
+	Version alpha 2011.06.10
 
 """
 import sys
