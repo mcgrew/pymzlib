@@ -177,6 +177,9 @@ def parseOpts( ):
 	                      dest="filterLevel", metavar="RATIO", help="Drop peaks "
 												"whose signal/noise ratio is less than RATIO" )
 
+	optparser.add_option( "--normalize", action="store_true", dest="normalize",
+	                      help="Normalize all plots to have a maximum value of 1" )
+
 	return optparser.parse_args( )
 
 
@@ -254,9 +257,17 @@ def main( options=None, args=None ):
 				elif options.hpfThreshold:
 					yAxis = filters.hpf( yAxis, options.hpfThreshold )
 
+			if options.normalize:
+				max_ = max( yAxis )
+				yAxis = [ x / max_ for x in yAxis ]
+
+			if options.normalize:
+				label = filename + " (normalized)"
+			else:
+				label = filename
 			pylab.plot( rt, yAxis, COLORS['ref'][0] , alpha = options.markerAlpha,
 			     linewidth=options.lineWidth,  
-					 label = filename )
+					 label = label )
 			COLORS['ref'] = COLORS['ref'][1:] + [ COLORS['ref'][0]]
 
 
@@ -329,6 +340,11 @@ def main( options=None, args=None ):
 			if ( len( labels )):
 				labels[ -1 ] = labels[ -1 ][ :-1 ] + ')' # replace the last , with )
 
+		if options.normalize:
+			max_ = max( barIntensity )
+			barIntensity /= max_
+			barNoise /= max_
+			
 		if options.massLabels:
 			for i in xrange( len( labels )):
 				pylab.annotate( labels[ i ], ( barRt[ 3 * i + 1 ], barIntensity[ 3 * i + 1 ]),
@@ -341,10 +357,15 @@ def main( options=None, args=None ):
 		if options.showPeaks:
 			if not options.removeNoise:
 				barIntensity += barNoise
+
+			if options.normalize:
+				label = label = ( "%s - intensity (%d peaks, normalized)" % 
+						( filename, len( barIntensity )/3))
+			else:
+				label = label = ( "%s - intensity (%d peaks, normalized)" % 
+						( filename, len( barIntensity )/3))
 			pylab.plot( barRt, barIntensity, COLORS['intensity'][0] , 
-			      linewidth = options.lineWidth*2, alpha = alpha, 
-						label = ( "%s - intensity (%d peaks)" % 
-						( filename, len( barIntensity )/3)))
+			      linewidth = options.lineWidth*2, alpha = alpha, label = label )
 
 		if options.connectPeaks:
 			pylab.plot( barRt[ 2::3 ], barIntensity[ 1::3 ], COLORS['intensity'][0], 
@@ -352,9 +373,12 @@ def main( options=None, args=None ):
 		COLORS['intensity'] = COLORS['intensity'][1:] + [ COLORS['intensity'][0]]
 				
 		if options.showNoise:
+			if options.normalize:
+				label = ( "%s - noise (%d points, normalized)" % ( filename, len( barNoise )/3))
+			else:
+				label = ( "%s - noise (%d points)" % ( filename, len( barNoise )/3))
 			pylab.plot( barRt[ 2::3 ], barNoise[ 1::3 ], COLORS['noise'][0], alpha = alpha, 
-			      linewidth=options.lineWidth, 
-			      label = ( "%s - noise (%d points)" % ( filename, len( barNoise )/3)))
+			      linewidth=options.lineWidth, label = label)
 			COLORS['noise'] = COLORS['noise'][1:] + [ COLORS['noise'][0]]
 		if len( barRt ):
 			#draw a horizontal black line at 0

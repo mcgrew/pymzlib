@@ -235,6 +235,25 @@ class RawData( object ):
 		except ValueError:
 			return 0;
 
+	def minMz( self ):
+		"""
+		Returns the maximum mz value in the data.
+
+		rtype: float
+		return: A float containing the max mz in the data.
+		"""
+		return min([ x[ 'mzRange' ][ 0 ] for x in self.data[ 'scans' ]])
+
+	def maxMz( self ):
+		"""
+		Returns the maximum mz value in the data.
+
+		rtype: float
+		return: A float containing the max mz in the data.
+		"""
+		return ( max([ x[ 'mzRange' ][ 1 ] for x in self.data[ 'scans' ]]))
+
+
 	def max_( self, sequence ):
 		if len( sequence ):
 			return max( sequence )
@@ -616,9 +635,7 @@ class RawData( object ):
 		out.write( "[data source]\n" )
 		out.write( "file name,%s\n" % self.data[ 'sourceFile' ] )
 		out.write( "[filters]\n" )
-		out.write( "mass range,%f,%f\n" % 
-						 ( min([ x[ 'mzRange' ][ 0 ] for x in self.data[ 'scans' ]]), 
-						 ( max([ x[ 'mzRange' ][ 1 ] for x in self.data[ 'scans' ]]))))
+		out.write( "mass range,%f,%f\n" % ( self.minMz( ), self.maxMz( )))
 		rtList = [ x['retentionTime']  for x in self.data['scans']]
 		out.write( "time range,%f,%f\n" % ( min( rtList ), max( rtList )))
 		out.write( "number of spectra,%d\n" % len( self.data['scans'] ))
