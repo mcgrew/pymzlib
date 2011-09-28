@@ -237,10 +237,10 @@ class RawData( object ):
 
 	def minMz( self ):
 		"""
-		Returns the maximum mz value in the data.
+		Returns the minimum mz value in the data.
 
 		rtype: float
-		return: A float containing the max mz in the data.
+		return: A float containing the min mz in the data.
 		"""
 		return min([ x[ 'mzRange' ][ 0 ] for x in self.data[ 'scans' ]])
 

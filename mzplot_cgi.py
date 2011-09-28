@@ -81,6 +81,7 @@ class Options( object ):
 
 def main( ):
 	options = Options( )
+	os.nice( 10 )
 	form = cgi.FieldStorage( )
 	for i in form.keys( ):
 		if not i == "files":
