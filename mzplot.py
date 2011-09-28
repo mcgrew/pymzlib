@@ -27,9 +27,11 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
+	Version beta 2011.05.26
+
 """
 
-VERSION = "0.2-beta-2011.06.10"
+VERSION = "0.2"
 
 import sys
 import os
@@ -256,8 +258,10 @@ def main( options=None, args=None ):
 					yAxis = filters.hpf( yAxis, options.hpfThreshold )
 
 			if options.normalize:
-				max_ = max( yAxis )
-				yAxis = [ x / max_ for x in yAxis ]
+				if len( yAxis ):
+					max_ = max( yAxis )
+					if max_:
+						yAxis = [ x / max_ for x in yAxis ]
 
 			if options.normalize:
 				label = filename + " (normalized)"
@@ -339,9 +343,11 @@ def main( options=None, args=None ):
 				labels[ -1 ] = labels[ -1 ][ :-1 ] + ')' # replace the last , with )
 
 		if options.normalize:
-			max_ = max( barIntensity )
-			barIntensity /= max_
-			barNoise /= max_
+			if len( barIntensity ):
+				max_ = max( barIntensity )
+				if max_:
+					barIntensity /= max_
+					barNoise /= max_
 			
 		if options.massLabels:
 			for i in xrange( len( labels )):
@@ -360,7 +366,7 @@ def main( options=None, args=None ):
 				label = label = ( "%s - intensity (%d peaks, normalized)" % 
 						( filename, len( barIntensity )/3))
 			else:
-				label = label = ( "%s - intensity (%d peaks, normalized)" % 
+				label = label = ( "%s - intensity (%d peaks)" % 
 						( filename, len( barIntensity )/3))
 			pylab.plot( barRt, barIntensity, COLORS['intensity'][0] , 
 			      linewidth = options.lineWidth*2, alpha = alpha, label = label )

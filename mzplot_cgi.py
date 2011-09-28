@@ -27,7 +27,7 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version beta 2011.05.26
+	Version 0.2
 
 """
 import cgi 
@@ -71,6 +71,7 @@ class Options( object ):
 		self.height        = 450
 		self.dpi           = 72
 		self.filterLevel   = 0
+		self.normalize     = False
 
 	def hash( self ):
 		optHash = sha1( )
