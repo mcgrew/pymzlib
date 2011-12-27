@@ -339,8 +339,8 @@ def main( options=None, args=None ):
 				if options.verbosity:
 					sys.stderr.write( "Skipping line %s" % ( line ))
 
-			if ( len( labels )):
-				labels[ -1 ] = labels[ -1 ][ :-1 ] + ')' # replace the last , with )
+		if ( len( labels )):
+			labels[ -1 ] = labels[ -1 ][ :-1 ] + ')' # replace the last , with )
 
 		if options.normalize:
 			if len( barIntensity ):
