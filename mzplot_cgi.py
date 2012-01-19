@@ -27,7 +27,7 @@ License: MIT license.
 	OTHER DEALINGS IN THE SOFTWARE.
 
 
-	Version 0.2
+	Version 0.2.1
 
 """
 import cgi 
@@ -35,6 +35,7 @@ import sys
 import os
 import re
 from base64 import b64encode
+from time import sleep
 try:
 	from hashlib import sha1
 except ImportError:
@@ -114,15 +115,30 @@ def main( ):
 	options.outputFile = ( CACHE_DIR + "/" + 
 	  b64encode( options.hash( ) + fileHash.digest( ), "_.") + 
 	  ".png" ).replace( "=", "" )
+	lockfile = options.outputFile + ".lock"
 		
 	if not os.path.exists( options.outputFile ):
-		mzplot.main( options, files )
+		if not os.path.exists( lockfile ):
+			f = open( lockfile, 'w' )
+			f.write( str( os.getpid( )))
+			f.close( )
+			mzplot.main( options, files )
+			os.remove( lockfile )
+		else:
+			wait_time = 2 #seconds
+			total_wait = 120 #seconds
+			while total_wait > 0 and os.path.exists( lockfile ):
+				sleep( wait_time )
+				total_wait -= wait_time
 
 	# headers
 	print "Content-Type: image/png"
-	imageData = open( options.outputFile, 'r' )
-	imageBytes = imageData.read( )
-	imageData.close( )
+	if os.path.exists( options.outputFile ):
+		imageData = open( options.outputFile, 'r' )
+		imageBytes = imageData.read( )
+		imageData.close( )
+	else:
+		imageBytes = str( )
 	print "Content-Length: %d" % len( imageBytes )
 	# arbitrary expiration date way in the future
 	# essentially "cache this as long as you want."
