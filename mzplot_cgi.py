@@ -122,8 +122,10 @@ def main( ):
 			f = open( lockfile, 'w' )
 			f.write( str( os.getpid( )))
 			f.close( )
-			mzplot.main( options, files )
-			os.remove( lockfile )
+			try:
+				mzplot.main( options, files )
+			finally:
+				os.remove( lockfile )
 		else:
 			wait_time = 2 #seconds
 			total_wait = 120 #seconds
