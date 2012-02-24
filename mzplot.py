@@ -226,7 +226,7 @@ def main( options=None, args=None ):
 			ref = mzlib.RawData( )
 			if not ( ref.read( r )):
 				sys.stderr.write( "Error: Unable to load data from '%s'" % r )
-				exit( -1 )
+				sys.exit( -1 )
 
 			if options.shortFilename:
 				filename = os.path.basename( r )
@@ -288,7 +288,7 @@ def main( options=None, args=None ):
 			lines = DictReader( f )
 		except IOError:
 			sys.stderr.write("Error: unable to read file '%s'\n" % arg )
-			exit( -1 )
+			sys.exit( -1 )
 
 		if options.shortFilename:
 			filename = os.path.basename( arg )
