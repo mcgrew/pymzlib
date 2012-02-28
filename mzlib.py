@@ -24,15 +24,12 @@ License: MIT license.
 	FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 	OTHER DEALINGS IN THE SOFTWARE.
 
-
-	Version alpha 2011.06.10
-
 """
 import sys
 import os
 from xml.dom.minidom import parse
 import struct
-from base64 import b64decode
+from base64 import b64decode, b64encode
 import re
 import zlib
 import gzip
@@ -44,6 +41,8 @@ except ImportError:
 		import simplejson as json
 	except:
 		json = False
+
+VERSION = "0.2.1.2012.02.27"
 
 class RawData( object ):
 
@@ -663,8 +662,80 @@ class RawData( object ):
 		out.close( )
 			
 	def writeMzData( self, filename ):
-		raise NotImplementedError( 
-			"Writing to this file type has not yet been implemented." )
+		out = open( filename, 'w' );
+		out.write( '<?xml version="1.0" encoding="UTF-8"?>\n' )
+		out.write( '<mzData version="1.05" accessionNumber="psi-ms:100" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">\n' )
+		out.write( '  <cvLookup cdLabel="psi" fullName="The PSI Ontology" version="1.00" address="http://psidev.sourceforge.net/ontology" />\n' )
+		out.write( '  <description>\n' )
+		out.write( '    <admin>\n' )
+		out.write( '      <sampleName/>\n' )
+		out.write( '      <sampleDescription comment="" />\n' )
+		out.write( '      <sourceFile>\n' )
+		out.write( '        <nameOfFile />\n' )
+		out.write( '        <pathToFile />\n' )
+		out.write( '      </sourceFile>\n' )
+		out.write( '      <contact>\n' )
+		out.write( '        <name />\n' )
+		out.write( '        <institution />\n' )
+		out.write( '        <contactInfo />\n' )
+		out.write( '      </contact>\n' )
+		out.write( '    </admin>\n' )
+		out.write( '    <instrument>\n' )
+		out.write( '      <instrumentName />\n' )
+		out.write( '      <source />\n' )
+		out.write( '      <analyzerList count="1">\n' )
+		out.write( '        <analyzer>\n' )
+		out.write( '          <cvParam cvLabel="psi" accession="PSI:1000010" name="AnalyzerType" value="unknown" />\n' )
+		out.write( '        </analyzer>\n' )
+		out.write( '      </analyzerList>\n' )
+		out.write( '      <detector>\n' )
+		out.write( '          <cvParam cvLabel="psi" accession="PSI:1000026" name="DetectorType" value="unknown" />\n' )
+		out.write( '          <cvParam cvLabel="psi" accession="PSI:1000029" name="SamplingFrequency" value="unknown" />\n' )
+		out.write( '      </detector>\n' )
+		out.write( '      <additional />\n' )
+		out.write( '    </instrument>\n' )
+		out.write( '    <dataProcessing>\n' )
+		out.write( '      <software completionTime="">\n' )
+		out.write( '        <name>pymzlib, Version=%s</name>\n' % VERSION )
+		out.write( '        <version>%s</version>\n' % VERSION )
+		out.write( '        <comments />\n' )
+		out.write( '      </software>\n' )
+		out.write( '      <processingMethod>\n' )
+		out.write( '          <cvParam cvLabel="psi" accession="PSI:1000033" name="deisotoped" value="unknown" />\n' )
+		out.write( '          <cvParam cvLabel="psi" accession="PSI:1000034" name="chargeDeconvolved" value="unknown" />\n' )
+		out.write( '          <cvParam cvLabel="psi" accession="PSI:1000035" name="peakProcessing" value="unknown" />\n' )
+		out.write( '      </processingMethod>\n' )
+		out.write( '    </dataProcessing>\n' )
+		out.write( '  </description>\n' )
+		out.write( '  <spectrumList count="%d">\n' % len( self.data[ 'scans' ]))
+		for scan in self.data[ 'scans' ]:
+			if ( scan[ 'polarity' ] > 0 ):
+				polarity = 'Positive'
+			else:
+				polarity = 'Negative'
+			out.write( '      <spectrum id="%d">\n' % scan[ 'id' ])
+			out.write( '        <spectrumDesc>\n' )
+			out.write( '          <spectrumSettings>\n' )
+			out.write( '            <acqSpecification spectrumType="unknown" methodOfCombination="unknown" count="1">\n' )
+			out.write( '              <acquisition number="%d" />\n' % scan[ 'id' ])
+			out.write( '            </acqSpecification>\n' )
+			out.write( '            <spectrumInstrument msLevel="%d" mzRangeStart="%f" mzRangeStop="%f">\n' % ( scan[ 'msLevel' ], scan[ 'mzRange' ][ 0 ], scan[ 'mzRange' ][ 1 ]))
+			out.write( '              <cvParam cvLabel="psi" accession="PSI:1000036" name="ScanMode" value="Scan" />\n' )
+			out.write( '              <cvParam cvLabel="psi" accession="PSI:1000037" name="Polarity" value="%s" />\n' %  polarity )
+			out.write( '              <cvParam cvLabel="psi" accession="PSI:1000038" name="TimeInMinutes" value="%f" />\n' % scan[ 'retentionTime' ])
+			out.write( '            </spectrumInstrument>\n' )
+			out.write( '          </spectrumSettings>\n' )
+			out.write( '        </spectrumDesc>\n' )
+			out.write( '        <mzArrayBinary>\n' )
+			dataLen = len( scan[ 'mzArray' ])
+			out.write( '          <data precision="64" endian="little" length="%d">%s</data>\n' % ( dataLen, b64encode( struct.pack( '<' + ( 'd' * dataLen ), *scan[ 'mzArray' ]))))
+			out.write( '        </mzArrayBinary>\n' )
+			out.write( '        <intenArrayBinary>\n' )
+			out.write( '          <data precision="64" endian="little" length="%d">%s</data>\n' % ( dataLen, b64encode( struct.pack( '<' + ( 'd' * dataLen ), *scan[ 'intensityArray' ]))))
+			out.write( '        </intenArrayBinary>\n' )
+			out.write( '      </spectrum>\n' )
+		out.write( '  </spectrumList>\n' )
+		out.write( '</mzData>\n' )
 
 	def writeMzXML( self, filename ):
 		raise NotImplementedError( 

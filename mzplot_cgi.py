@@ -26,10 +26,10 @@ License: MIT license.
 	FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 	OTHER DEALINGS IN THE SOFTWARE.
 
-
-	Version 0.2.1
-
 """
+
+VERSION = "0.2.1"
+
 import cgi 
 import sys
 import os

@@ -26,12 +26,9 @@ License: MIT license.
 	FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 	OTHER DEALINGS IN THE SOFTWARE.
 
-
-	Version beta 2011.05.26
-
 """
 
-VERSION = "0.2"
+VERSION = "0.2.1.2012.02.27"
 
 import sys
 import os
@@ -40,6 +37,7 @@ import os.path
 #import cPickle
 from optparse import OptionParser,SUPPRESS_HELP
 import numpy as numerical
+import math
 import mzlib
 from csv import DictReader
 try:
@@ -271,6 +269,31 @@ def main( options=None, args=None ):
 			     linewidth=options.lineWidth,  
 					 label = label )
 			COLORS['ref'] = COLORS['ref'][1:] + [ COLORS['ref'][0]]
+			if not options.scriptMode:
+
+				def findMedian( sortedArray ):
+					arrayLen = len( sortedArray )
+					if arrayLen % 2:
+						median = sortedArray[ arrayLen // 2 ] * sortedArray[ arrayLen // 2 + 1 ]
+					else:
+						median = sortedArray[ arrayLen // 2 ]
+					return median
+
+				array = list( yAxis );
+				array.sort( )
+				median = findMedian( array )
+				q1 = findMedian( array[ : len( array ) // 2 ])
+				q3 = findMedian( array[ int( math.ceil( len( array ) / 2.0 )) : ])
+				min_ = min( yAxis )
+				max_ = max( yAxis )
+				print( "Plot statistics for %s:" % label )
+				print( "\tRange:               %g (%g - %g)" % ( max_ - min_, min_, max_ ))
+				print( "\tMean:                %g" % numerical.mean( yAxis ))
+				print( "\tMedian:              %g" % median )
+				print( "\tInterquartile Range: %g (%g - %g)" % ( q3 - q1, q1, q3 ))
+				print( "\tStandard Deviation:  %g" % numerical.std( yAxis ))
+				print( "\tVariance:            %g" % numerical.var( yAxis ))
+
 
 
 	# The following section of code is specific to the OmicsDP data formats.

@@ -27,6 +27,8 @@ License: X11 license.
 
 """
 
+VERSION = "0.2"
+
 import mzlib
 from sys import argv
 
